@@ -6,6 +6,9 @@ DEFAULT_BASE_URL: str = "https://srvcapp.platform.quboworld.com:443"
 # Fixed Service Provider UUID extracted from native C++ binaries (libcore-rest.so)
 DEFAULT_SP_ID: str = "d10e4bfb0153496e8e8bb955f7ebe413"
 
+# Official Android Application Package Identifier
+DEFAULT_APP_ID: str = "com.hero.iot"
+
 # Cloud Infrastructure Hosts
 MQTT_BROKER_HOST: str = "mqtt.platform.quboworld.com"
 MQTT_BROKER_PORT: int = 8883

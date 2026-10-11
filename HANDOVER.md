@@ -106,12 +106,19 @@ By disassembling the ARM64 binaries and tracing symbol tables, we verified that:
   * Linked `units` (homes/sites).
 
 #### B. Phone & OTP Login (Alternative)
+* **Headers Required**:
+  ```http
+  Content-Type: application/json
+  App-Id: com.hero.iot
+  Source-Device-Id: <client_uuid>
+  ```
 * **Request OTP**:
   - `POST /sms/api/v1/sp/d10e4bfb0153496e8e8bb955f7ebe413/user/phone/login`
-  - Body: `{"phone": "98XXXXXXXX", "isdCode": "+91"}`
+  - Body: `{"phone": "98XXXXXXXX", "isdCode": "91", "deviceAttribute": "android"}`
+  - Note: `isdCode` must omit the `+` prefix (`"91"`, not `"+91"`).
 * **Verify OTP**:
   - `POST /sms/api/v1/sp/d10e4bfb0153496e8e8bb955f7ebe413/user/phone/verify`
-  - Body: `{"phone": "98XXXXXXXX", "otp": "1234"}`
+  - Body: `{"phone": "98XXXXXXXX", "isdCode": "91", "otp": "1234", "deviceAttribute": "android"}`
 
 #### C. Session Refresh
 * **Method**: `POST`

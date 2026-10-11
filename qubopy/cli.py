@@ -73,9 +73,10 @@ async def _cmd_login_phone(args: argparse.Namespace) -> int:
 
 async def _cmd_verify_otp(args: argparse.Namespace) -> int:
     auth = QuboAuth()
-    print(f"Verifying OTP for phone: {args.phone} ...")
+    isd = getattr(args, "isd", "91")
+    print(f"Verifying OTP for phone: {isd}{args.phone} ...")
     try:
-        tokens = await auth.verify_phone_otp(args.phone, args.otp)
+        tokens = await auth.verify_phone_otp(args.phone, args.otp, isd_code=isd)
         print("Phone authentication successful.")
         print(f"User UUID: {tokens.user_uuid}")
         _save_session(
@@ -211,6 +212,7 @@ def main() -> None:
     p_otp = subparsers.add_parser("verify-otp", help="Verify SMS OTP and complete login")
     p_otp.add_argument("--phone", required=True, help="Phone number")
     p_otp.add_argument("--otp", required=True, help="OTP code received via SMS")
+    p_otp.add_argument("--isd", default="91", help="ISD country code (default: 91)")
 
     # list-devices
     p_list = subparsers.add_parser("list-devices", help="List all registered devices")

@@ -63,13 +63,19 @@ async def test_email_login_invalid_credentials():
 
 @pytest.mark.asyncio
 async def test_phone_otp_flow():
-    """Verify phone OTP request and verification."""
-    auth = QuboAuth()
+    """Verify phone OTP request and verification with required App-Id and deviceAttribute."""
+    auth = QuboAuth(device_id="test-device-uuid")
 
     mock_resp_request = MockClientResponse(200, json.dumps({"status": "OTP_SENT"}))
-    with patch("aiohttp.ClientSession.post", return_value=mock_resp_request):
+    with patch("aiohttp.ClientSession.post", return_value=mock_resp_request) as mock_post:
         req_res = await auth.request_phone_otp("9876543210", "+91")
         assert req_res["status"] == "OTP_SENT"
+        # Assert headers and payload
+        args, kwargs = mock_post.call_args
+        assert kwargs["headers"]["App-Id"] == "com.hero.iot"
+        assert kwargs["headers"]["Source-Device-Id"] == "test-device-uuid"
+        assert kwargs["json"]["isdCode"] == "91"
+        assert kwargs["json"]["deviceAttribute"] == "android"
 
     otp_payload = {
         "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjIwMDAwMDAwMDAsInV1aWQiOiJ1c2VyLTg4OCJ9.sig",
@@ -77,10 +83,13 @@ async def test_phone_otp_flow():
         "uuid": "user-888",
     }
     mock_resp_verify = MockClientResponse(200, json.dumps(otp_payload))
-    with patch("aiohttp.ClientSession.post", return_value=mock_resp_verify):
-        tokens = await auth.verify_phone_otp("9876543210", "1234")
+    with patch("aiohttp.ClientSession.post", return_value=mock_resp_verify) as mock_post:
+        tokens = await auth.verify_phone_otp("9876543210", "1234", isd_code="91")
         assert tokens.user_uuid == "user-888"
         assert tokens.access_token == otp_payload["accessToken"]
+        args, kwargs = mock_post.call_args
+        assert kwargs["headers"]["App-Id"] == "com.hero.iot"
+        assert kwargs["json"]["deviceAttribute"] == "android"
 
     await auth.close()
 
