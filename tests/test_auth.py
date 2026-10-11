@@ -52,7 +52,7 @@ async def test_email_login_success():
         assert kwargs["json"]["username"] == "user@example.com"
         assert kwargs["json"]["email"] == "user@example.com"
         assert kwargs["json"]["password"] == "mypassword"
-        assert kwargs["json"]["deviceAttribute"] == "HomeAssistant_qubopy"
+        assert kwargs["json"]["deviceAttribute"] == "Qubopy"
         assert "/user/login?system=CS" in args[0]
 
     await auth.close()
@@ -87,7 +87,7 @@ async def test_phone_otp_flow():
         assert kwargs["headers"]["Source"] == "USER"
         assert kwargs["headers"]["Source-Device-Id"] == "test-device-uuid"
         assert kwargs["json"]["isdCode"] == "+91"
-        assert kwargs["json"]["deviceAttribute"] == "HomeAssistant_qubopy"
+        assert kwargs["json"]["deviceAttribute"] == "Qubopy"
 
     otp_payload = {
         "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjIwMDAwMDAwMDAsInV1aWQiOiJ1c2VyLTg4OCJ9.sig",
@@ -103,7 +103,7 @@ async def test_phone_otp_flow():
         assert kwargs["headers"]["App-Id"] == "com.hero.iot"
         assert kwargs["headers"]["Source"] == "USER"
         assert kwargs["json"]["uuid"] == "session-123"
-        assert kwargs["json"]["deviceAttribute"] == "HomeAssistant_qubopy"
+        assert kwargs["json"]["deviceAttribute"] == "Qubopy"
 
     await auth.close()
 

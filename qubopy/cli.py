@@ -10,6 +10,7 @@ from typing import Any
 
 from qubopy.auth import QuboAuth
 from qubopy.client import QuboClient
+from qubopy.const import DEFAULT_DEVICE_ATTRIBUTE
 from qubopy.devices.lock import QuboLock
 from qubopy.exceptions import QuboError
 
@@ -35,9 +36,12 @@ def _load_session() -> dict[str, Any] | None:
 
 async def _cmd_login(args: argparse.Namespace) -> int:
     auth = QuboAuth()
+    device_name = getattr(args, "device_name", DEFAULT_DEVICE_ATTRIBUTE)
     print(f"Logging in with email: {args.email} ...")
     try:
-        tokens = await auth.login_with_email(args.email, args.password)
+        tokens = await auth.login_with_email(
+            args.email, args.password, device_attribute=device_name
+        )
         print("Login successful.")
         print(f"User UUID: {tokens.user_uuid}")
         _save_session(
@@ -63,9 +67,12 @@ async def _cmd_login_phone(args: argparse.Namespace) -> int:
     phone = args.phone
     isd = getattr(args, "isd", "+91")
     clean_isd = isd if isd.startswith("+") else f"+{isd}"
+    device_name = getattr(args, "device_name", DEFAULT_DEVICE_ATTRIBUTE)
     print(f"Requesting SMS OTP for phone: {clean_isd}{phone} ...")
     try:
-        resp = await auth.request_phone_otp(phone, clean_isd)
+        resp = await auth.request_phone_otp(
+            phone, clean_isd, device_attribute=device_name
+        )
         session_uuid = resp.get("uuid")
         if not session_uuid:
             print(f"Error: Server response missing session uuid: {resp}", file=sys.stderr)
@@ -80,6 +87,7 @@ async def _cmd_login_phone(args: argparse.Namespace) -> int:
                     "isd": clean_isd,
                     "sessionUuid": session_uuid,
                     "deviceId": auth.device_id,
+                    "deviceName": device_name,
                 }),
                 encoding="utf-8",
             )
@@ -92,7 +100,11 @@ async def _cmd_login_phone(args: argparse.Namespace) -> int:
             if otp:
                 print("Verifying OTP ...")
                 tokens = await auth.verify_phone_otp(
-                    phone, otp, isd_code=clean_isd, session_uuid=session_uuid
+                    phone,
+                    otp,
+                    isd_code=clean_isd,
+                    session_uuid=session_uuid,
+                    device_attribute=device_name,
                 )
                 print("Phone authentication successful.")
                 print(f"User UUID: {tokens.user_uuid}")
@@ -123,7 +135,7 @@ async def _cmd_verify_otp(args: argparse.Namespace) -> int:
     phone = args.phone
     isd = getattr(args, "isd", "+91")
     session_uuid = getattr(args, "session_uuid", None)
-    device_id = None
+    device_name = getattr(args, "device_name", None)
 
     # Fall back to pending session cache if phone or session_uuid not provided
     if SESSION_TEMP_FILE.exists():
@@ -133,9 +145,11 @@ async def _cmd_verify_otp(args: argparse.Namespace) -> int:
             isd = isd or pending.get("isd", "+91")
             session_uuid = session_uuid or pending.get("sessionUuid")
             device_id = pending.get("deviceId")
+            device_name = device_name or pending.get("deviceName")
         except Exception:
             pass
 
+    device_name = device_name or DEFAULT_DEVICE_ATTRIBUTE
     auth = QuboAuth(device_id=device_id)
 
     if not phone:
@@ -149,7 +163,11 @@ async def _cmd_verify_otp(args: argparse.Namespace) -> int:
     print(f"Verifying OTP for phone: {clean_isd}{phone} ...")
     try:
         tokens = await auth.verify_phone_otp(
-            phone, args.otp, isd_code=clean_isd, session_uuid=session_uuid
+            phone,
+            args.otp,
+            isd_code=clean_isd,
+            session_uuid=session_uuid,
+            device_attribute=device_name,
         )
         print("Phone authentication successful.")
         print(f"User UUID: {tokens.user_uuid}")
@@ -280,18 +298,36 @@ def main() -> None:
     p_login = subparsers.add_parser("login", help="Login with email and password")
     p_login.add_argument("--email", required=True, help="Qubo account email")
     p_login.add_argument("--password", required=True, help="Qubo account password")
+    p_login.add_argument(
+        "--device-name",
+        default=DEFAULT_DEVICE_ATTRIBUTE,
+        help=f"Device label shown in Qubo app (default: {DEFAULT_DEVICE_ATTRIBUTE})",
+    )
 
     # login-phone
     p_phone = subparsers.add_parser("login-phone", help="Request SMS OTP for phone login")
     p_phone.add_argument("--phone", required=True, help="Phone number (without +91)")
     p_phone.add_argument("--isd", default="+91", help="ISD country code (default: +91)")
+    p_phone.add_argument(
+        "--device-name",
+        default=DEFAULT_DEVICE_ATTRIBUTE,
+        help=f"Device label shown in Qubo app (default: {DEFAULT_DEVICE_ATTRIBUTE})",
+    )
 
     # verify-otp
     p_otp = subparsers.add_parser("verify-otp", help="Verify SMS OTP and complete login")
     p_otp.add_argument("--otp", required=True, help="OTP code received via SMS")
     p_otp.add_argument("--phone", help="Phone number (optional if login-phone was just run)")
     p_otp.add_argument("--isd", default="+91", help="ISD country code (default: +91)")
-    p_otp.add_argument("--session-uuid", help="Session UUID from login-phone (optional if login-phone was just run)")
+    p_otp.add_argument(
+        "--session-uuid",
+        help="Session UUID from login-phone (optional if login-phone was just run)",
+    )
+    p_otp.add_argument(
+        "--device-name",
+        default=DEFAULT_DEVICE_ATTRIBUTE,
+        help=f"Device label shown in Qubo app (default: {DEFAULT_DEVICE_ATTRIBUTE})",
+    )
 
     # list-devices
     p_list = subparsers.add_parser("list-devices", help="List all registered devices")

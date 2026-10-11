@@ -10,7 +10,7 @@ DEFAULT_SP_ID: str = "d10e4bfb0153496e8e8bb955f7ebe413"
 DEFAULT_APP_ID: str = "com.hero.iot"
 
 # Default Device Identifier for Qubo backend session display
-DEFAULT_DEVICE_ATTRIBUTE: str = "HomeAssistant_qubopy"
+DEFAULT_DEVICE_ATTRIBUTE: str = "Qubopy"
 
 # Cloud Infrastructure Hosts
 MQTT_BROKER_HOST: str = "mqtt.platform.quboworld.com"
