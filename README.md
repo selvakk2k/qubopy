@@ -15,12 +15,13 @@ An asynchronous Python client library and local Bluetooth Low Energy (BLE) crede
 - [Overview](#overview)
 - [Hardware Compatibility Matrix](#hardware-compatibility-matrix)
 - [Installation](#installation)
+- [Authentication & Account Guidelines](#authentication--account-guidelines)
 - [Quick Start](#quick-start)
   - [1. Cloud Appliance Control](#1-cloud-appliance-control)
   - [2. Exporting BLE Smart Lock Credentials](#2-exporting-ble-smart-lock-credentials)
 - [Command Line Interface (CLI)](#command-line-interface-cli)
+- [IP Camera & Media Streaming Architecture](#ip-camera--media-streaming-architecture)
 - [Local BLE Architecture for Smart Locks](#local-ble-architecture-for-smart-locks)
-- [API Architecture](#api-architecture)
 - [Contributing & Testing](#contributing--testing)
 - [Credits & License](#credits--license)
 
@@ -60,6 +61,23 @@ pip install qubopy
 
 ---
 
+## Authentication & Account Guidelines
+
+> [!IMPORTANT]
+> **Account Registration Restriction**: Qubo strictly restricts account authentication to the method used during registration.
+> - If you created your Qubo account using a **mobile phone number**, you must authenticate using SMS OTP (`login-phone`).
+> - If you created your Qubo account using an **email and password**, you must authenticate using email (`login`).
+> - Attempting to use email and password credentials on an account registered with a phone number will be rejected by the cloud.
+
+> [!NOTE]
+> **Account Linkage Model**: While an email address is strictly bound to a single account (1-to-1), a phone number can be linked to multiple accounts. `qubopy` automatically detects and unpacks multi-account responses during phone verification.
+
+> [!WARNING]
+> **Mobile App Session Revocation**: When you sign in via `qubopy`, the active session is visible in the official Qubo mobile app under **Account -> Logged In Devices** with the label `Qubopy` (or your custom `--device-name`).
+> Tapping **[Logout]** next to this entry in the mobile app immediately revokes the session on Qubo servers, requiring you to re-authenticate.
+
+---
+
 ## Quick Start
 
 ### 1. Cloud Appliance Control
@@ -70,7 +88,7 @@ from qubopy import QuboAuth, QuboClient
 from qubopy.devices import QuboPlug
 
 async def main():
-    # Authenticate via email or phone
+    # Authenticate via email or phone OTP
     auth = QuboAuth()
     await auth.login_with_email("user@example.com", "your_password")
 
@@ -125,15 +143,20 @@ asyncio.run(main())
 
 ## Command Line Interface (CLI)
 
-`qubopy` includes a command-line interface for testing authentication and inspecting device parameters:
+`qubopy` provides a command-line interface for authenticating, testing, and extracting keys:
 
 ```bash
-# Authenticate using email and password
+# Authenticate using email and password (default label: Qubopy)
 python -m qubopy login --email user@example.com --password "secret"
 
-# Authenticate using phone number and OTP
+# Authenticate with a custom device label shown in the Qubo mobile app
+python -m qubopy login --email user@example.com --password "secret" --device-name "Home Assistant"
+
+# Authenticate using phone number and SMS OTP (interactive prompt)
 python -m qubopy login-phone --phone 9876543210 --isd +91
-python -m qubopy verify-otp --phone 9876543210 --otp 1234
+
+# Verify SMS OTP in a separate step (if not completed interactively)
+python -m qubopy verify-otp --otp 123456
 
 # List all units and paired devices
 python -m qubopy list-devices
@@ -141,6 +164,16 @@ python -m qubopy list-devices
 # Export local BLE credentials for smart locks
 python -m qubopy export-ble-keys --device-id <device_uuid>
 ```
+
+---
+
+## IP Camera & Media Streaming Architecture
+
+Qubo security cameras (`HCP` / `HCO` series) and video doorbells (`HCD` series) handle streaming sessions as follows:
+
+* **Session Exclusivity**: Streaming URLs minted by Qubo cloud are single-consumer sessions (each URL serves one active stream session).
+* **Local Network Streaming**: The mobile app does not rely on open LAN RTSP ports. Instead, it negotiates direct peer-to-peer (P2P) UDP connections encrypted with AES-128-GCM over RTP.
+* **Downstream Integration**: `qubopy` extracts device identifiers, unit IDs, live tokens, and streaming endpoints so that media engines (such as `go2rtc` and Home Assistant) can connect without third-party tools.
 
 ---
 
