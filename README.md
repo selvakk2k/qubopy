@@ -14,11 +14,17 @@ An asynchronous Python client library and local Bluetooth Low Energy (BLE) crede
 
 - [Overview](#overview)
 - [Hardware Compatibility Matrix](#hardware-compatibility-matrix)
-- [Installation](#installation)
+- [Installation & CLI Access](#installation--cli-access)
+  - [1. From PyPI (Recommended)](#1-from-pypi-recommended)
+  - [2. From Source or GitHub Release](#2-from-source-or-github-release)
 - [Authentication & Account Guidelines](#authentication--account-guidelines)
 - [Quick Start](#quick-start)
-  - [1. Cloud Appliance Control](#1-cloud-appliance-control)
-  - [2. Smart Door Lock Control (Cloud Gateway & Local BLE)](#2-smart-door-lock-control-cloud-gateway--local-ble)
+  - [1. Authentication & Client Setup](#1-authentication--client-setup)
+  - [2. Smart Plugs (HSP Series)](#2-smart-plugs-hsp-series)
+  - [3. Air Purifiers (HPH Series)](#3-air-purifiers-hph-series)
+  - [4. Smart Lighting (HLB Series)](#4-smart-lighting-hlb-series)
+  - [5. Cameras & Doorbells (HCP / HCD Series)](#5-cameras--doorbells-hcp--hcd-series)
+  - [6. Smart Door Locks (HLM / HLW Series)](#6-smart-door-locks-hlm--hlw-series)
 - [Command Line Interface (CLI)](#command-line-interface-cli)
 - [IP Camera & Media Streaming Architecture](#ip-camera--media-streaming-architecture)
 - [Local BLE Architecture for Smart Locks](#local-ble-architecture-for-smart-locks)
@@ -34,7 +40,7 @@ An asynchronous Python client library and local Bluetooth Low Energy (BLE) crede
 The Qubo smart home ecosystem consists of two distinct communication models:
 
 1. **Wi-Fi Appliances (Cloud Managed)**: Smart Plugs, Air Purifiers, Smart Bulbs, and Security Cameras connect outbound to Qubo cloud services over TLS REST and MQTT. `qubopy` interacts with Qubo's cloud REST gateway (`srvcapp.platform.quboworld.com`) to discover units, retrieve shadow states, and dispatch control commands.
-2. **Bluetooth Smart Locks (Experimental Local BLE)**: Qubo smart door locks (`HLM`/`HLW` series) operate via Bluetooth Low Energy without an integrated Wi-Fi radio. The mobile app syncs offline authentication keys (`dbtauthkey`) and offline PIN seeds (`dbtoffkey`) from the cloud. `qubopy` extracts these cryptographic keys from the account for potential local integration with Home Assistant Bluetooth Proxies and ESPHome. *Note: BLE lock protocols were derived from static analysis of the official mobile app and remain untested on physical hardware.*
+2. **Bluetooth Smart Locks (Dual-Path Control)**: Qubo smart door locks (`HLM`/`HLW` series) operate via Bluetooth Low Energy without an integrated Wi-Fi radio. They can be actuated remotely through an in-home Qubo gateway bridge (Video Doorbell Pro or Smart Camera) or integrated locally by extracting offline cryptographic credentials (`dbtauthkey`) for ESP32 Bluetooth Proxies.
 
 ---
 
@@ -45,7 +51,7 @@ The Qubo smart home ecosystem consists of two distinct communication models:
 | `HSP` | Smart Plugs | `HSP01` (16A), `HSP02` (10A), `HSP10` | Switch, Voltage, Current, Active Power (W), Energy (kWh) | Cloud REST |
 | `HPH` | Air Purifiers | `HPH01`–`HPH08` (Q200 to Q1000) | Fan Speed, Auto/Sleep Presets, PM2.5, Filter Life, Child Lock | Cloud REST |
 | `HLB` | Smart Lighting | `HLB01`, `HLB10` | State, Brightness, RGB Color, White Temperature | Cloud REST |
-| `HLM` / `HLW` | Door Locks | `HLM01`–`HLM10`, `HLR01`, `HLW01` | Lock/Unlock, Battery Level, Offline BLE Key Export | ⚠️ Experimental (Local BLE + Cloud Sync) |
+| `HLM` / `HLW` | Door Locks | `HLM01`–`HLM10`, `HLR01`, `HLW01` | Lock/Unlock, Battery Level, Offline BLE Key Export | Cloud Gateway (✅ Hardware Verified) / Local BLE (⚠️ Experimental) |
 | `HCP` / `HCO` | Cameras | `HCP01`–`HCP19`, `HCO04`–`HCO07` | RTSP Stream Query, Privacy Mask, Siren, Motion Status | Cloud REST + Local RTSP |
 | `HCD` | Doorbells | `HCD01`, `HCD04` | Ring Event, Chime, RTSP Stream | Cloud REST + Local RTSP |
 | `HDS` / `HGS` | Security | `HDS01` (Contact), `HGS01` (Gas), `HSA01` (Smoke) | Binary Alarms, Battery Telemetry | Cloud REST |
@@ -53,12 +59,40 @@ The Qubo smart home ecosystem consists of two distinct communication models:
 
 ---
 
-## Installation
+## Installation & CLI Access
 
-Install `qubopy` via `pip`:
+### 1. From PyPI (Recommended)
+
+Install the library directly using `pip`:
 
 ```bash
 pip install qubopy
+```
+
+Once installed, the CLI is available as both a direct executable and a Python module:
+
+```bash
+# Using the console entry point
+qubopy --help
+
+# Using the Python module runner
+python -m qubopy --help
+```
+
+### 2. From Source or GitHub Release
+
+If building from source or testing a GitHub release archive:
+
+```bash
+# Clone the repository
+git clone https://github.com/selvakk2k/qubopy.git
+cd qubopy
+
+# Install in editable mode
+pip install -e .
+
+# Run the CLI
+python -m qubopy --help
 ```
 
 ---
@@ -82,65 +116,141 @@ pip install qubopy
 
 ## Quick Start
 
-### 1. Cloud Appliance Control
+### 1. Authentication & Client Setup
+
+Authenticate using either your email and password or phone SMS OTP, then initialize the client to discover all devices:
 
 ```python
 import asyncio
 from qubopy import QuboAuth, QuboClient
-from qubopy.devices import QuboPlug
 
 async def main():
-    # Authenticate via email or phone OTP
     auth = QuboAuth()
+
+    # Option A: Email login
     await auth.login_with_email("<email>", "<password>")
 
-    # Connect client
+    # Option B: Phone SMS OTP login
+    # res = await auth.request_phone_otp("<phone_number>", isd_code="+91")
+    # await auth.verify_phone_otp("<phone_number>", "<otp_code>", session_uuid=res["uuid"])
+
     async with QuboClient(auth) as client:
-        # Discover units and devices
+        # Discover all homes and paired devices
         devices = await client.get_all_devices()
-        print(f"Discovered {len(devices)} devices")
-
-        for device in devices:
-            print(f"- {device.name} ({device.model}) -> {device.device_id}")
-
-            # Control smart plugs
-            if isinstance(device, QuboPlug):
-                await device.turn_on()
-                shadow = await device.refresh()
-                print(f"  Power: {device.power_watts} W, Voltage: {device.voltage} V")
+        print(f"Discovered {len(devices)} device(s):")
+        for dev in devices:
+            print(f"- {dev.name} ({dev.model}) [{dev.device_id}]")
 
 asyncio.run(main())
 ```
 
-### 2. Smart Door Lock Control (Cloud Gateway & Local BLE)
+---
+
+### 2. Smart Plugs (HSP Series)
+
+Control smart plugs and monitor active electrical metrics:
+
+```python
+from qubopy.devices import QuboPlug
+
+# Assuming 'device' is an instance of QuboPlug from get_all_devices()
+async def operate_plug(plug: QuboPlug):
+    # Toggle power state
+    await plug.turn_on()
+    # await plug.turn_off()
+
+    # Fetch latest telemetry
+    await plug.refresh()
+    print(f"Status : {'ON' if plug.is_on else 'OFF'}")
+    print(f"Power  : {plug.power_watts} W")
+    print(f"Voltage: {plug.voltage} V")
+    print(f"Current: {plug.current_amps} A")
+```
+
+---
+
+### 3. Air Purifiers (HPH Series)
+
+Control fan speeds, switch preset modes, and inspect air quality:
+
+```python
+from qubopy.devices import QuboAirPurifier
+
+async def operate_purifier(purifier: QuboAirPurifier):
+    await purifier.turn_on()
+
+    # Set fan speed (1 to 3) or preset mode ('auto', 'sleep', 'manual')
+    await purifier.set_fan_speed(2)
+    await purifier.set_mode("auto")
+
+    # Read sensor values
+    await purifier.refresh()
+    print(f"PM2.5       : {purifier.pm25} ug/m3")
+    print(f"Filter Life : {purifier.filter_life_percent}%")
+```
+
+---
+
+### 4. Smart Lighting (HLB Series)
+
+Control power, adjust brightness, change RGB colors, and tune color temperature:
+
+```python
+from qubopy.devices import QuboLight
+
+async def operate_light(light: QuboLight):
+    # Turn on with custom brightness and color
+    await light.turn_on(brightness=80, rgb=(255, 140, 0))
+
+    # Tune white color temperature
+    await light.set_color_temp_kelvin(3000)
+
+    # Turn off
+    # await light.turn_off()
+```
+
+---
+
+### 5. Cameras & Doorbells (HCP / HCD Series)
+
+Query RTSP stream credentials, toggle privacy shutters, and sound deterrent sirens:
+
+```python
+from qubopy.devices import QuboCamera
+
+async def operate_camera(camera: QuboCamera):
+    # Query streaming endpoint details
+    stream_info = await camera.get_rtsp_info()
+    if stream_info.is_supported:
+        print(f"RTSP Host : {stream_info.rtsp_url}")
+        print(f"Username  : {stream_info.username}")
+
+    # Toggle privacy shutter mode
+    await camera.set_privacy_mode(True)
+
+    # Deterrent siren control
+    # await camera.set_siren(True)
+```
+
+---
+
+### 6. Smart Door Locks (HLM / HLW Series)
 
 Qubo smart door locks support two distinct integration strategies:
 
-#### A. Cloud Gateway Unlock (Hardware Verified)
-If you have an in-home Qubo gateway device (such as a Video Doorbell Pro or Smart Camera) paired in the same home unit, you can unlock directly via the cloud gateway bridge:
+#### Method A: Cloud Gateway Unlock (Hardware Verified)
+If you have an in-home Qubo gateway device (such as a Video Doorbell Pro or Smart Camera) paired in the same home unit, unlock directly through the cloud gateway bridge:
 
 ```python
-import asyncio
-from qubopy import QuboAuth, QuboClient
 from qubopy.devices import QuboLock
 
-async def main():
-    auth = QuboAuth()
-    await auth.login_with_email("<email>", "<password>")
-
-    async with QuboClient(auth) as client:
-        devices = await client.get_all_devices()
-        locks = [d for d in devices if isinstance(d, QuboLock)]
-
-        for lock in locks:
-            # Unlock via paired in-home gateway bridge
-            res = await lock.unlock()
-            print(f"Unlocked {lock.name}: {res}")
-
-asyncio.run(main())
+async def unlock_door(lock: QuboLock):
+    # Unlocks via paired in-home gateway bridge
+    result = await lock.unlock()
+    print(f"Unlock result: {result}")
 ```
 
-#### B. Local BLE Offline Credentials (Experimental)
+#### Method B: Local BLE Offline Credentials (Experimental)
 
 > [!CAUTION]
 > **Untested / Experimental**: The BLE lock credential extraction and GATT definitions below were derived from reverse-engineering the official mobile application. They have **not been tested or verified on physical smart lock hardware**. Testing and contributions from community members with physical locks are welcome.
@@ -148,28 +258,16 @@ asyncio.run(main())
 Extract offline cryptographic keys for experimental local use with Home Assistant Bluetooth Proxies or ESPHome:
 
 ```python
-import asyncio
-from qubopy import QuboAuth, QuboClient
 from qubopy.devices import QuboLock
 
-async def main():
-    auth = QuboAuth()
-    await auth.login_with_email("<email>", "<password>")
-
-    async with QuboClient(auth) as client:
-        devices = await client.get_all_devices()
-        locks = [d for d in devices if isinstance(d, QuboLock)]
-
-        for lock in locks:
-            keys = await lock.get_ble_lock_keys()
-            print("=== Qubo BLE Lock Credentials (Experimental) ===")
-            print(f"Device Name: {keys.device_name}")
-            print(f"Bluetooth MAC: {keys.mac_address}")
-            print(f"Auth Key: {keys.auth_key}")
-            print(f"Offline Key: {keys.offline_key}")
-            print(f"Admin PIN: {keys.admin_pass}")
-
-asyncio.run(main())
+async def export_lock_ble(lock: QuboLock):
+    keys = await lock.get_ble_lock_keys()
+    print("=== Qubo BLE Lock Credentials (Experimental) ===")
+    print(f"Device Name: {keys.device_name}")
+    print(f"Bluetooth MAC: {keys.mac_address}")
+    print(f"Auth Key: {keys.auth_key}")
+    print(f"Offline Key: {keys.offline_key}")
+    print(f"Admin PIN: {keys.admin_pass}")
 ```
 
 ---
