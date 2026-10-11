@@ -163,7 +163,7 @@ class QuboAuth:
         except json.JSONDecodeError as err:
             raise QuboAuthError(f"Invalid JSON returned by server: {err}") from err
 
-        access_token = data.get("accessToken")
+        access_token = data.get("accessToken") or data.get("token")
         user_uuid = data.get("uuid") or data.get("userUUID") or data.get("userId")
         if not access_token or not user_uuid:
             raise QuboAuthError(f"Missing required token fields in login response: {data}")
@@ -263,7 +263,7 @@ class QuboAuth:
         except json.JSONDecodeError as err:
             raise QuboAuthError(f"Invalid JSON returned by server: {err}") from err
 
-        access_token = data.get("accessToken")
+        access_token = data.get("accessToken") or data.get("token")
         user_uuid = data.get("uuid") or data.get("userUUID") or data.get("userId")
         if not access_token or not user_uuid:
             raise QuboAuthError(f"Missing tokens in OTP response: {data}")

@@ -115,14 +115,16 @@ async def test_phone_otp_multi_account_list():
 
     multi_account_payload = [
         {
-            "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjIwMDAwMDAwMDAsInV1aWQiOiJ1c2VyLTExMSJ9.sig",
-            "refreshToken": "ref-111",
+            "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjIwMDAwMDAwMDAsInV1aWQiOiJ1c2VyLTExMSJ9.sig",
             "uuid": "user-111",
+            "email": "user1@example.com",
+            "name": "User One",
         },
         {
-            "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjIwMDAwMDAwMDAsInV1aWQiOiJ1c2VyLTIyMiJ9.sig",
-            "refreshToken": "ref-222",
+            "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjIwMDAwMDAwMDAsInV1aWQiOiJ1c2VyLTIyMiJ9.sig",
             "uuid": "user-222",
+            "email": "user2@example.com",
+            "name": "User Two",
         },
     ]
     mock_resp_verify = MockClientResponse(200, json.dumps(multi_account_payload))
@@ -131,8 +133,8 @@ async def test_phone_otp_multi_account_list():
             "9245419833", "865321", isd_code="+91", session_uuid="session-multi"
         )
         assert tokens.user_uuid == "user-111"
-        assert tokens.access_token == multi_account_payload[0]["accessToken"]
-        assert tokens.refresh_token == "ref-111"
+        assert tokens.access_token == multi_account_payload[0]["token"]
+        assert tokens.refresh_token is None
 
     await auth.close()
 
