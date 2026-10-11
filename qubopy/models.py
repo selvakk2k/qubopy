@@ -1,0 +1,97 @@
+"""Pydantic data models for qubopy."""
+
+from typing import Any
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class TokenPayload(BaseModel):
+    """Authentication token and session payload."""
+
+    model_config = ConfigDict(populate_by_name=True, extra="ignore")
+
+    access_token: str = Field(alias="accessToken")
+    refresh_token: str | None = Field(default=None, alias="refreshToken")
+    user_uuid: str = Field(alias="uuid")
+    token_type: str = Field(default="accessToken", alias="tokenType")
+    expires_at: float | None = None
+
+
+class Unit(BaseModel):
+    """A physical home or site container."""
+
+    model_config = ConfigDict(populate_by_name=True, extra="ignore")
+
+    uuid: str
+    name: str = "Home"
+    entities: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class Entity(BaseModel):
+    """A room, sub-group, or hub boundary within a unit."""
+
+    model_config = ConfigDict(populate_by_name=True, extra="ignore")
+
+    uuid: str
+    name: str = "Room"
+    unit_uuid: str = ""
+    entity_type: str = Field(default="", alias="type")
+    devices: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class DeviceModelInfo(BaseModel):
+    """Raw device descriptor returned from discovery."""
+
+    model_config = ConfigDict(populate_by_name=True, extra="ignore")
+
+    uuid: str = Field(alias="uuid", default="")
+    device_id: str = Field(alias="deviceId", default="")
+    name: str = "Qubo Device"
+    model: str = ""
+    device_type: str = Field(default="", alias="type")
+    unit_uuid: str = Field(default="", alias="unitUUID")
+    entity_uuid: str = Field(default="", alias="entityUUID")
+    is_online: bool = Field(default=True, alias="isOnline")
+    extra_data: dict[str, Any] = Field(default_factory=dict, alias="extraData")
+
+
+class DeviceShadow(BaseModel):
+    """Device shadow state containing live telemetry and attributes."""
+
+    model_config = ConfigDict(populate_by_name=True, extra="ignore")
+
+    device_uuid: str = ""
+    reported: dict[str, Any] = Field(default_factory=dict)
+    desired: dict[str, Any] = Field(default_factory=dict)
+    timestamp: int | None = None
+    raw: dict[str, Any] = Field(default_factory=dict)
+
+
+class BleLockCredentials(BaseModel):
+    """Local Bluetooth Low Energy cryptographic keys extracted from P01DeviceBean."""
+
+    model_config = ConfigDict(populate_by_name=True, extra="ignore")
+
+    device_uuid: str
+    device_name: str
+    mac_address: str = Field(description="Physical Bluetooth MAC address (dmac)")
+    auth_key: str = Field(description="Secret BLE handshake authentication key (dbtauthkey)")
+    offline_key: str = Field(description="Offline PIN calculation seed (dbtoffkey)")
+    offline_key_flag: str | None = Field(default=None, description="Offline key active flag")
+    admin_pass: str | None = Field(default=None, description="Master administrator passcode")
+    admin_flag: str | None = Field(default=None, description="Administrator active flag")
+    bluetooth_name: str | None = Field(default=None, description="Advertised BLE name (dbtname)")
+    battery_level: int | None = Field(default=None, description="Battery percentage (0-100)")
+    is_open: bool | None = Field(default=None, description="Lock state from bean")
+
+
+class RtspStreamInfo(BaseModel):
+    """Camera RTSP stream capability and endpoint details."""
+
+    model_config = ConfigDict(populate_by_name=True, extra="ignore")
+
+    device_uuid: str
+    is_supported: bool = False
+    stream_url: str | None = None
+    auth_required: bool = False
+    username: str | None = None
+    password: str | None = None
