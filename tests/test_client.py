@@ -94,3 +94,45 @@ async def test_camera_rtsp_query(sample_client):
         assert rtsp.auth_required is True
 
     await sample_client.close()
+
+
+@pytest.mark.asyncio
+async def test_get_units_and_devices_hierarchy(sample_client):
+    """Verify hierarchical discovery via units and unit devices."""
+    units_payload = [{"unitUUID": "unit-home-1", "name": "My Home"}]
+    devices_payload = [
+        {
+            "deviceUUID": "cam-100",
+            "deviceName": "Front Door Cam",
+            "deviceModel": "HCP01",
+            "deviceType": "Camera",
+            "unitUUID": "unit-home-1",
+            "isOnline": True,
+        }
+    ]
+
+    def mock_request(method, url, **kwargs):
+        if "/units/unit-home-1/devices" in url:
+            return MockClientResponse(200, json.dumps(devices_payload))
+        if "/units" in url:
+            return MockClientResponse(200, json.dumps(units_payload))
+        return MockClientResponse(404, "{}")
+
+    with patch("aiohttp.ClientSession.request", side_effect=mock_request):
+        units = await sample_client.get_units()
+        assert len(units) == 1
+        assert units[0]["unitUUID"] == "unit-home-1"
+
+        unit_devs = await sample_client.get_devices_for_unit("unit-home-1")
+        assert len(unit_devs) == 1
+        assert unit_devs[0]["deviceUUID"] == "cam-100"
+
+        devices = await sample_client.get_all_devices()
+        assert len(devices) == 1
+        cam = devices[0]
+        assert cam.device_id == "cam-100"
+        assert cam.name == "Front Door Cam"
+        assert cam.model == "HCP01"
+
+    await sample_client.close()
+

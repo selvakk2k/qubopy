@@ -15,6 +15,8 @@ from qubopy.const import (
     PATH_GET_DEVICES,
     PATH_RTSP_SUPPORT,
     PATH_SEND_COMMAND,
+    PATH_UNIT_DEVICES,
+    PATH_UNITS,
     PATH_UPDATE_SHADOW_ATTRIBUTE,
 )
 from qubopy.devices import QuboDevice, create_device
@@ -145,6 +147,42 @@ class QuboClient:
             raw=resp if isinstance(resp, dict) else {},
         )
 
+    async def get_units(self) -> list[dict[str, Any]]:
+        """Fetch all physical units (homes/sites) associated with the account."""
+        path = PATH_UNITS.format(sp=self.sp_id)
+        try:
+            resp = await self.request("GET", path)
+        except Exception as err:
+            _LOGGER.warning("Could not fetch units: %s", err)
+            return []
+
+        if isinstance(resp, list):
+            return resp
+        if isinstance(resp, dict):
+            items = resp.get("data", resp.get("units", []))
+            if isinstance(items, list):
+                return items
+            return [resp]
+        return []
+
+    async def get_devices_for_unit(self, unit_uuid: str) -> list[dict[str, Any]]:
+        """Fetch all devices registered under a specific home unit."""
+        path = PATH_UNIT_DEVICES.format(sp=self.sp_id, unit_uuid=unit_uuid)
+        try:
+            resp = await self.request("GET", path)
+        except Exception as err:
+            _LOGGER.warning("Could not fetch devices for unit %s: %s", unit_uuid, err)
+            return []
+
+        if isinstance(resp, list):
+            return resp
+        if isinstance(resp, dict):
+            items = resp.get("data", resp.get("devices", []))
+            if isinstance(items, list):
+                return items
+            return [resp]
+        return []
+
     async def get_devices_for_entity(
         self, unit_uuid: str, entity_uuid: str
     ) -> list[DeviceModelInfo]:
@@ -252,29 +290,73 @@ class QuboClient:
 
     async def get_all_devices(self) -> list[QuboDevice]:
         """Discover and instantiate all paired devices across the account."""
-        # 1. Fetch bulk shadows
-        shadows = await self.get_all_shadows()
-
-        # 2. Extract devices from bulk shadows and account metadata
         devices: list[QuboDevice] = []
         seen_uuids: set[str] = set()
 
-        # If shadows contain device descriptors, build them
-        for dev_uuid, shadow in shadows.items():
-            raw = shadow.raw
-            dev_info = DeviceModelInfo(
-                uuid=dev_uuid,
-                deviceId=dev_uuid,
-                name=raw.get("name", raw.get("deviceName", f"Qubo {dev_uuid[:6]}")),
-                model=raw.get("model", raw.get("deviceModel", "")),
-                type=raw.get("type", raw.get("deviceType", "")),
-                unitUUID=raw.get("unitUUID", raw.get("unitId", "")),
-                entityUUID=raw.get("entityUUID", raw.get("entityId", "")),
-                isOnline=raw.get("isOnline", True),
-                extraData=raw.get("extraData", raw),
-            )
-            devices.append(create_device(dev_info, self, shadow))
-            seen_uuids.add(dev_uuid)
+        units = await self.get_units()
+        if not units:
+            # Fallback if no units returned or endpoint structure differs
+            units = [{"unitUUID": "default", "name": "Default Unit"}]
+
+        for unit in units:
+            unit_uuid = unit.get("unitUUID") or unit.get("uuid") or unit.get("unitId") or ""
+            raw_devs = await self.get_devices_for_unit(unit_uuid) if unit_uuid else []
+            for d in raw_devs:
+                if not isinstance(d, dict):
+                    continue
+                dev_uuid = d.get("deviceUUID") or d.get("deviceId") or d.get("uuid") or ""
+                if not dev_uuid or dev_uuid in seen_uuids:
+                    continue
+                seen_uuids.add(dev_uuid)
+
+                # Parse shadow if embedded in device descriptor
+                shadow_obj = None
+                raw_shadow = d.get("state") or d.get("shadow") or d.get("deviceShadow")
+                if isinstance(raw_shadow, dict):
+                    state_obj = raw_shadow.get("state", raw_shadow)
+                    reported = state_obj.get("reported", raw_shadow.get("reported", {}))
+                    desired = state_obj.get("desired", raw_shadow.get("desired", {}))
+                    shadow_obj = DeviceShadow(
+                        device_uuid=dev_uuid,
+                        reported=reported if isinstance(reported, dict) else {},
+                        desired=desired if isinstance(desired, dict) else {},
+                        timestamp=d.get("timestamp") or raw_shadow.get("timestamp"),
+                        raw=raw_shadow,
+                    )
+
+                dev_info = DeviceModelInfo(
+                    uuid=dev_uuid,
+                    deviceId=dev_uuid,
+                    name=d.get("deviceName", d.get("name", f"Qubo {dev_uuid[:6]}")),
+                    model=d.get("deviceModel", d.get("model", "")),
+                    type=d.get("deviceType", d.get("type", "")),
+                    unitUUID=unit_uuid or d.get("unitUUID", ""),
+                    entityUUID=d.get("entityUUID", d.get("entityId", "")),
+                    isOnline=bool(d.get("isOnline", d.get("online", True))),
+                    extraData=d.get("extraData", d),
+                )
+                devices.append(create_device(dev_info, self, shadow_obj))
+
+        if not devices:
+            # Fallback to bulk shadow discovery if unit hierarchy returned no devices
+            shadows = await self.get_all_shadows()
+            for dev_uuid, shadow in shadows.items():
+                if dev_uuid in seen_uuids:
+                    continue
+                raw = shadow.raw
+                dev_info = DeviceModelInfo(
+                    uuid=dev_uuid,
+                    deviceId=dev_uuid,
+                    name=raw.get("name", raw.get("deviceName", f"Qubo {dev_uuid[:6]}")),
+                    model=raw.get("model", raw.get("deviceModel", "")),
+                    type=raw.get("type", raw.get("deviceType", "")),
+                    unitUUID=raw.get("unitUUID", raw.get("unitId", "")),
+                    entityUUID=raw.get("entityUUID", raw.get("entityId", "")),
+                    isOnline=raw.get("isOnline", True),
+                    extraData=raw.get("extraData", raw),
+                )
+                devices.append(create_device(dev_info, self, shadow))
+                seen_uuids.add(dev_uuid)
 
         return devices
 

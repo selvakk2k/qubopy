@@ -25,6 +25,10 @@ PATH_LOGIN_PHONE_VERIFY: str = "/sms/api/v1/sp/{sp}/user/phone/verify"
 PATH_AUTH_REFRESH: str = "/sms/api/v1/sp/{sp}/users/{user_uuid}/auth/refresh"
 
 # Discovery & Hierarchy Paths
+PATH_UNITS: str = "/unit-entity-management/api/v1/sp/{sp}/units"
+PATH_UNIT_DEVICES: str = (
+    "/unit-entity-management/api/v1/sp/{sp}/units/{unit_uuid}/devices"
+)
 PATH_GET_DEVICES: str = (
     "/unit-entity-management/api/v1/sp/{sp}/units/{unit_uuid}/entities/{entity_uuid}/devices/self"
 )
