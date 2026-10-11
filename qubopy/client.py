@@ -201,6 +201,39 @@ class QuboClient:
         )
         return await self.request("POST", path, json_data=command)
 
+    async def unlock_lock_via_gateway(
+        self,
+        unit_uuid: str,
+        entity_uuid: str,
+        gateway_uuid: str,
+    ) -> dict[str, Any]:
+        """Dispatch cloud unlock command to the in-home gateway device."""
+        path = PATH_SEND_COMMAND.format(
+            sp=self.sp_id,
+            unit_uuid=unit_uuid or "default",
+            entity_uuid=entity_uuid or "default",
+            device_uuid=gateway_uuid,
+        )
+        payload = {
+            "topic": f"/control/{unit_uuid}/{gateway_uuid}/lockControl",
+            "payload": {
+                "devices": {
+                    "deviceUUID": gateway_uuid,
+                    "services": {
+                        "lockControl": {
+                            "commands": {
+                                "lockUnlock": {
+                                    "instanceId": 0,
+                                    "parameters": {"control": "unlock"},
+                                }
+                            }
+                        }
+                    },
+                }
+            },
+        }
+        return await self.request("PUT", path, json_data=payload)
+
     async def update_shadow_attribute(
         self,
         unit_uuid: str,

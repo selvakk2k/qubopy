@@ -2,18 +2,26 @@
 
 from typing import Any
 from qubopy.devices.base import QuboDevice
-from qubopy.exceptions import QuboKeyExtractionError
+from qubopy.exceptions import QuboCommandError, QuboKeyExtractionError
 from qubopy.models import BleLockCredentials
 
 
 class QuboLock(QuboDevice):
-    """Qubo Smart Door Lock (HLM01-10, HLW01, HLR01) based on Deftun P01 hardware."""
+    """Qubo Smart Door Lock (HLM01-10, HLW01, HLR01)."""
+
+    @property
+    def gateway_id(self) -> str | None:
+        """Return paired in-home gateway device UUID if present in metadata."""
+        return (
+            self.info.extra_data.get("gatewayUUID")
+            or self.info.extra_data.get("gatewayId")
+            or self.shadow.reported.get("gatewayUUID")
+        )
 
     @property
     def is_locked(self) -> bool | None:
         """Return True if door is locked, False if unlocked, None if unknown."""
         rep = self.reported_state
-        # Deftun P01 isOpen = True means door is unlocked/open
         is_open = rep.get("isOpen") or rep.get("open")
         if is_open is not None:
             return not bool(is_open)
@@ -98,4 +106,22 @@ class QuboLock(QuboDevice):
             bluetooth_name=str(bt_name) if bt_name is not None else None,
             battery_level=power,
             is_open=bool(is_open_val) if is_open_val is not None else None,
+        )
+
+    async def unlock(self, gateway_uuid: str | None = None) -> dict[str, Any]:
+        """Dispatch cloud unlock command to the paired in-home gateway device.
+
+        Qubo smart door locks actuate via Bluetooth Low Energy commands sent from a
+        paired in-home Wi-Fi gateway (such as a Video Doorbell Pro or Smart Camera).
+        """
+        target_gw = gateway_uuid or self.gateway_id
+        if not target_gw:
+            raise QuboCommandError(
+                f"Cannot unlock {self.device_id} ({self.name}): no paired gateway device "
+                "found in metadata. Provide an explicit gateway_uuid."
+            )
+        return await self.client.unlock_lock_via_gateway(
+            unit_uuid=self.unit_id,
+            entity_uuid=self.entity_id,
+            gateway_uuid=target_gw,
         )

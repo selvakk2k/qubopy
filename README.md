@@ -18,7 +18,7 @@ An asynchronous Python client library and local Bluetooth Low Energy (BLE) crede
 - [Authentication & Account Guidelines](#authentication--account-guidelines)
 - [Quick Start](#quick-start)
   - [1. Cloud Appliance Control](#1-cloud-appliance-control)
-  - [2. Exporting BLE Smart Lock Credentials](#2-exporting-ble-smart-lock-credentials)
+  - [2. Smart Door Lock Control (Cloud Gateway & Local BLE)](#2-smart-door-lock-control-cloud-gateway--local-ble)
 - [Command Line Interface (CLI)](#command-line-interface-cli)
 - [IP Camera & Media Streaming Architecture](#ip-camera--media-streaming-architecture)
 - [Local BLE Architecture for Smart Locks](#local-ble-architecture-for-smart-locks)
@@ -112,12 +112,40 @@ async def main():
 asyncio.run(main())
 ```
 
-### 2. Exporting BLE Smart Lock Credentials
+### 2. Smart Door Lock Control (Cloud Gateway & Local BLE)
+
+Qubo smart door locks support two distinct integration strategies:
+
+#### A. Cloud Gateway Unlock (Hardware Verified)
+If you have an in-home Qubo gateway device (such as a Video Doorbell Pro or Smart Camera) paired in the same home unit, you can unlock directly via the cloud gateway bridge:
+
+```python
+import asyncio
+from qubopy import QuboAuth, QuboClient
+from qubopy.devices import QuboLock
+
+async def main():
+    auth = QuboAuth()
+    await auth.login_with_email("<email>", "<password>")
+
+    async with QuboClient(auth) as client:
+        devices = await client.get_all_devices()
+        locks = [d for d in devices if isinstance(d, QuboLock)]
+
+        for lock in locks:
+            # Unlock via paired in-home gateway bridge
+            res = await lock.unlock()
+            print(f"Unlocked {lock.name}: {res}")
+
+asyncio.run(main())
+```
+
+#### B. Local BLE Offline Credentials (Experimental)
 
 > [!CAUTION]
 > **Untested / Experimental**: The BLE lock credential extraction and GATT definitions below were derived from reverse-engineering the official mobile application. They have **not been tested or verified on physical smart lock hardware**. Testing and contributions from community members with physical locks are welcome.
 
-Extract the offline cryptographic keys for experimental use in Home Assistant or ESPHome:
+Extract offline cryptographic keys for experimental local use with Home Assistant Bluetooth Proxies or ESPHome:
 
 ```python
 import asyncio
@@ -165,6 +193,9 @@ python -m qubopy verify-otp --otp <otp_code>
 
 # List all units and paired devices
 python -m qubopy list-devices
+
+# Cloud unlock smart lock via paired in-home gateway
+python -m qubopy unlock --device-id <lock_uuid>
 
 # Export local BLE credentials for smart locks (experimental)
 python -m qubopy export-ble-keys --device-id <device_uuid>

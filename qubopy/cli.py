@@ -286,6 +286,35 @@ async def _cmd_export_ble_keys(args: argparse.Namespace) -> int:
         return 1
 
 
+async def _cmd_unlock(args: argparse.Namespace) -> int:
+    auth = _create_auth_from_session(args)
+    if not auth.is_authenticated:
+        print("Error: No active session. Run 'qubopy login' first.", file=sys.stderr)
+        return 1
+
+    device_id = args.device_id
+    gateway_id = getattr(args, "gateway_id", None)
+    print(f"Unlocking device {device_id} ...")
+    try:
+        async with QuboClient(auth) as client:
+            devices = await client.get_all_devices()
+            target = next((d for d in devices if d.device_id == device_id), None)
+            if not target:
+                print(f"Error: Device {device_id} not found in account.", file=sys.stderr)
+                return 1
+            if not isinstance(target, QuboLock):
+                print(f"Error: Device {device_id} ({target.name}) is not a smart lock.", file=sys.stderr)
+                return 1
+
+            res = await target.unlock(gateway_uuid=gateway_id)
+            print("Unlock command sent successfully.")
+            print(f"Response: {res}")
+            return 0
+    except QuboError as err:
+        print(f"Error: {err}", file=sys.stderr)
+        return 1
+
+
 def main() -> None:
     """CLI entry point for qubopy."""
     parser = argparse.ArgumentParser(
@@ -340,6 +369,13 @@ def main() -> None:
     p_ble.add_argument("--token", help="Override JWT access token")
     p_ble.add_argument("--user-uuid", help="Override User UUID")
 
+    # unlock
+    p_unlock = subparsers.add_parser("unlock", help="Send cloud unlock command to a smart lock via gateway")
+    p_unlock.add_argument("--device-id", required=True, help="Lock device UUID to unlock")
+    p_unlock.add_argument("--gateway-id", help="Optional gateway device UUID override")
+    p_unlock.add_argument("--token", help="Override JWT access token")
+    p_unlock.add_argument("--user-uuid", help="Override User UUID")
+
     args = parser.parse_args()
 
     loop = asyncio.new_event_loop()
@@ -355,6 +391,8 @@ def main() -> None:
             sys.exit(loop.run_until_complete(_cmd_list_devices(args)))
         elif args.command == "export-ble-keys":
             sys.exit(loop.run_until_complete(_cmd_export_ble_keys(args)))
+        elif args.command == "unlock":
+            sys.exit(loop.run_until_complete(_cmd_unlock(args)))
     finally:
         loop.close()
 
