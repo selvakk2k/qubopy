@@ -121,37 +121,49 @@ python -m qubopy --help
 
 Authenticate using either your email and password or phone SMS OTP. Developers can pass an optional `device_attribute` parameter to set the friendly device label shown in the official Qubo mobile app:
 
+#### Method A: Email and Password Login
+
 ```python
 import asyncio
 from qubopy import QuboAuth, QuboClient
 
 async def main():
     auth = QuboAuth()
-
-    # Option A: Email login (with optional custom device label)
     await auth.login_with_email(
         "<email>",
         "<password>",
         device_attribute="Home Assistant",  # Optional: custom label in Qubo app (default: "Qubopy")
     )
 
-    # Option B: Phone SMS OTP login
-    # res = await auth.request_phone_otp(
-    #     "<phone_number>",
-    #     isd_code="+91",
-    #     device_attribute="Home Assistant",
-    # )
-    # await auth.verify_phone_otp(
-    #     "<phone_number>",
-    #     "<otp_code>",
-    #     session_uuid=res["uuid"],
-    #     device_attribute="Home Assistant",
-    # )
+    async with QuboClient(auth) as client:
+        devices = await client.get_all_devices()
+        for dev in devices:
+            print(f"- {dev.name} ({dev.model}) [{dev.device_id}]")
+
+asyncio.run(main())
+```
+
+#### Method B: Phone SMS OTP Login
+
+```python
+import asyncio
+from qubopy import QuboAuth, QuboClient
+
+async def main():
+    auth = QuboAuth()
+    res = await auth.request_phone_otp(
+        "<phone_number>",
+        isd_code="+91",
+        device_attribute="Home Assistant",
+    )
+    await auth.verify_phone_otp(
+        "<phone_number>",
+        "<otp_code>",
+        session_uuid=res["uuid"],
+    )
 
     async with QuboClient(auth) as client:
-        # Discover all homes and paired devices
         devices = await client.get_all_devices()
-        print(f"Discovered {len(devices)} device(s):")
         for dev in devices:
             print(f"- {dev.name} ({dev.model}) [{dev.device_id}]")
 
@@ -169,9 +181,8 @@ from qubopy.devices import QuboPlug
 
 # Assuming 'plug' is an instance of QuboPlug from get_all_devices()
 async def operate_plug(plug: QuboPlug):
-    # Toggle power state
+    # Toggle power state (or use plug.turn_off())
     await plug.turn_on()
-    # await plug.turn_off()
 
     # Fetch latest telemetry
     await plug.refresh()
@@ -218,9 +229,6 @@ async def operate_light(light: QuboLight):
 
     # Tune white color temperature
     await light.set_color_temp_kelvin(3000)
-
-    # Turn off
-    # await light.turn_off()
 ```
 
 ---
@@ -241,9 +249,6 @@ async def operate_camera(camera: QuboCamera):
 
     # Toggle privacy shutter mode
     await camera.set_privacy_mode(True)
-
-    # Deterrent siren control
-    # await camera.set_siren(True)
 ```
 
 ---
