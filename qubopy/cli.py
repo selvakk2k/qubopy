@@ -55,14 +55,62 @@ async def _cmd_login(args: argparse.Namespace) -> int:
         await auth.close()
 
 
+SESSION_TEMP_FILE = Path.home() / ".qubopy_otp_pending.json"
+
+
 async def _cmd_login_phone(args: argparse.Namespace) -> int:
     auth = QuboAuth()
-    print(f"Requesting OTP for phone: {args.isd}{args.phone} ...")
+    phone = args.phone
+    isd = getattr(args, "isd", "+91")
+    clean_isd = isd if isd.startswith("+") else f"+{isd}"
+    print(f"Requesting SMS OTP for phone: {clean_isd}{phone} ...")
     try:
-        resp = await auth.request_phone_otp(args.phone, args.isd)
+        resp = await auth.request_phone_otp(phone, clean_isd)
+        session_uuid = resp.get("uuid")
+        if not session_uuid:
+            print(f"Error: Server response missing session uuid: {resp}", file=sys.stderr)
+            return 1
+
         print("OTP requested successfully.")
-        print(f"Server response: {resp}")
-        print("Run 'python -m qubopy verify-otp --phone <phone> --otp <code>' to complete login.")
+        # Cache pending session for verify-otp fallback
+        try:
+            SESSION_TEMP_FILE.write_text(
+                json.dumps({
+                    "phone": phone,
+                    "isd": clean_isd,
+                    "sessionUuid": session_uuid,
+                    "deviceId": auth.device_id,
+                }),
+                encoding="utf-8",
+            )
+        except Exception:
+            pass
+
+        # If interactive terminal, prompt immediately
+        if sys.stdin.isatty():
+            otp = input("Enter the 6-digit OTP received on your phone: ").strip()
+            if otp:
+                print("Verifying OTP ...")
+                tokens = await auth.verify_phone_otp(
+                    phone, otp, isd_code=clean_isd, session_uuid=session_uuid
+                )
+                print("Phone authentication successful.")
+                print(f"User UUID: {tokens.user_uuid}")
+                _save_session(
+                    {
+                        "accessToken": tokens.access_token,
+                        "refreshToken": tokens.refresh_token,
+                        "uuid": tokens.user_uuid,
+                    }
+                )
+                try:
+                    SESSION_TEMP_FILE.unlink(missing_ok=True)
+                except Exception:
+                    pass
+                return 0
+
+        print(f"Session UUID: {session_uuid}")
+        print("Run 'python -m qubopy verify-otp --otp <code>' to complete login.")
         return 0
     except QuboError as err:
         print(f"Error: {err}", file=sys.stderr)
@@ -72,11 +120,37 @@ async def _cmd_login_phone(args: argparse.Namespace) -> int:
 
 
 async def _cmd_verify_otp(args: argparse.Namespace) -> int:
-    auth = QuboAuth()
-    isd = getattr(args, "isd", "91")
-    print(f"Verifying OTP for phone: {isd}{args.phone} ...")
+    phone = args.phone
+    isd = getattr(args, "isd", "+91")
+    session_uuid = getattr(args, "session_uuid", None)
+    device_id = None
+
+    # Fall back to pending session cache if phone or session_uuid not provided
+    if SESSION_TEMP_FILE.exists():
+        try:
+            pending = json.loads(SESSION_TEMP_FILE.read_text(encoding="utf-8"))
+            phone = phone or pending.get("phone")
+            isd = isd or pending.get("isd", "+91")
+            session_uuid = session_uuid or pending.get("sessionUuid")
+            device_id = pending.get("deviceId")
+        except Exception:
+            pass
+
+    auth = QuboAuth(device_id=device_id)
+
+    if not phone:
+        print("Error: Phone number is required. Provide --phone <number>", file=sys.stderr)
+        return 1
+    if not session_uuid:
+        print("Error: Session UUID is required. Provide --session-uuid <uuid> or run login-phone first.", file=sys.stderr)
+        return 1
+
+    clean_isd = isd if isd.startswith("+") else f"+{isd}"
+    print(f"Verifying OTP for phone: {clean_isd}{phone} ...")
     try:
-        tokens = await auth.verify_phone_otp(args.phone, args.otp, isd_code=isd)
+        tokens = await auth.verify_phone_otp(
+            phone, args.otp, isd_code=clean_isd, session_uuid=session_uuid
+        )
         print("Phone authentication successful.")
         print(f"User UUID: {tokens.user_uuid}")
         _save_session(
@@ -86,6 +160,10 @@ async def _cmd_verify_otp(args: argparse.Namespace) -> int:
                 "uuid": tokens.user_uuid,
             }
         )
+        try:
+            SESSION_TEMP_FILE.unlink(missing_ok=True)
+        except Exception:
+            pass
         return 0
     except QuboError as err:
         print(f"Error: {err}", file=sys.stderr)
@@ -210,9 +288,10 @@ def main() -> None:
 
     # verify-otp
     p_otp = subparsers.add_parser("verify-otp", help="Verify SMS OTP and complete login")
-    p_otp.add_argument("--phone", required=True, help="Phone number")
     p_otp.add_argument("--otp", required=True, help="OTP code received via SMS")
-    p_otp.add_argument("--isd", default="91", help="ISD country code (default: 91)")
+    p_otp.add_argument("--phone", help="Phone number (optional if login-phone was just run)")
+    p_otp.add_argument("--isd", default="+91", help="ISD country code (default: +91)")
+    p_otp.add_argument("--session-uuid", help="Session UUID from login-phone (optional if login-phone was just run)")
 
     # list-devices
     p_list = subparsers.add_parser("list-devices", help="List all registered devices")

@@ -6,6 +6,7 @@ import json
 import logging
 import time
 import uuid
+from pathlib import Path
 from typing import Any
 
 import aiohttp
@@ -23,6 +24,21 @@ from qubopy.exceptions import QuboAuthError, QuboConnectionError
 from qubopy.models import TokenPayload
 
 _LOGGER = logging.getLogger(__name__)
+DEVICE_ID_FILE = Path.home() / ".qubopy_device_id"
+
+
+def _get_or_create_device_id() -> str:
+    """Return persistent device UUID matching Android uniqueAndroidID behavior."""
+    try:
+        if DEVICE_ID_FILE.exists():
+            saved_id = DEVICE_ID_FILE.read_text(encoding="utf-8").strip()
+            if saved_id:
+                return saved_id
+        new_id = str(uuid.uuid4())
+        DEVICE_ID_FILE.write_text(new_id, encoding="utf-8")
+        return new_id
+    except Exception:
+        return str(uuid.uuid4())
 
 
 def _decode_jwt_expiry(token: str) -> float | None:
@@ -56,10 +72,11 @@ class QuboAuth:
         self.base_url = base_url.rstrip("/")
         self.sp_id = sp_id
         self.app_id = app_id
-        self.device_id = device_id or str(uuid.uuid4())
+        self.device_id = device_id or _get_or_create_device_id()
         self._session = session
         self._owns_session = session is None
         self._tokens: TokenPayload | None = None
+        self._login_uuid: str | None = None
         self._refresh_lock = asyncio.Lock()
 
     @property
@@ -106,22 +123,41 @@ class QuboAuth:
             self._owns_session = True
         return self._session
 
-    async def login_with_email(self, email: str, password: str) -> TokenPayload:
+    async def login_with_email(
+        self,
+        email: str,
+        password: str,
+        device_attribute: str = "Xiaomi_2201117TI",
+    ) -> TokenPayload:
         """Authenticate using account email and password."""
         url = f"{self.base_url}{PATH_LOGIN_EMAIL.format(sp=self.sp_id)}"
-        payload = {"email": email, "password": password}
+        payload = {
+            "username": email,
+            "email": email,
+            "password": password,
+            "deviceAttribute": device_attribute,
+        }
+        headers = {
+            "Content-Type": "application/json",
+            "App-Id": self.app_id,
+            "Source-Device-Id": self.device_id,
+            "Source": "USER",
+            "Token-Type": "USER",
+        }
 
         session = await self._get_session()
         try:
-            async with session.post(
-                url, json=payload, headers={"Content-Type": "application/json"}
-            ) as response:
+            async with session.post(url, json=payload, headers=headers) as response:
                 text = await response.text()
                 if response.status != 200:
                     raise QuboAuthError(
                         f"Email login failed (HTTP {response.status}): {text}"
                     )
                 data = json.loads(text)
+                if isinstance(data, list) and data:
+                    data = data[0]
+                if not isinstance(data, dict):
+                    raise QuboAuthError(f"Unexpected response format from login: {data}")
         except aiohttp.ClientError as err:
             raise QuboConnectionError(f"Network error during login: {err}") from err
         except json.JSONDecodeError as err:
@@ -144,20 +180,24 @@ class QuboAuth:
         return self._tokens
 
     async def request_phone_otp(
-        self, phone: str, isd_code: str = "91"
+        self,
+        phone: str,
+        isd_code: str = "+91",
+        device_attribute: str = "Xiaomi_2201117TI",
     ) -> dict[str, Any]:
         """Request a one-time SMS password for phone login."""
         url = f"{self.base_url}{PATH_LOGIN_PHONE_REQUEST.format(sp=self.sp_id)}"
-        clean_isd = isd_code.lstrip("+") or "91"
+        clean_isd = isd_code if isd_code.startswith("+") else f"+{isd_code}"
         payload = {
             "phone": phone,
             "isdCode": clean_isd,
-            "deviceAttribute": "android",
+            "deviceAttribute": device_attribute,
         }
         headers = {
             "Content-Type": "application/json",
             "App-Id": self.app_id,
             "Source-Device-Id": self.device_id,
+            "Source": "USER",
         }
 
         session = await self._get_session()
@@ -168,26 +208,41 @@ class QuboAuth:
                     raise QuboAuthError(
                         f"OTP request failed (HTTP {response.status}): {text}"
                     )
-                return json.loads(text)
+                data = json.loads(text)
+                self._login_uuid = data.get("uuid")
+                return data
         except aiohttp.ClientError as err:
             raise QuboConnectionError(f"Network error requesting OTP: {err}") from err
 
     async def verify_phone_otp(
-        self, phone: str, otp: str, isd_code: str = "91"
+        self,
+        phone: str,
+        otp: str,
+        isd_code: str = "+91",
+        session_uuid: str | None = None,
+        device_attribute: str = "Xiaomi_2201117TI",
     ) -> TokenPayload:
         """Verify received SMS OTP and obtain session tokens."""
         url = f"{self.base_url}{PATH_LOGIN_PHONE_VERIFY.format(sp=self.sp_id)}"
-        clean_isd = isd_code.lstrip("+") or "91"
+        clean_isd = isd_code if isd_code.startswith("+") else f"+{isd_code}"
+        target_uuid = session_uuid or self._login_uuid
+        if not target_uuid:
+            raise QuboAuthError(
+                "Missing login session UUID. Call request_phone_otp first or provide session_uuid."
+            )
+
         payload = {
             "phone": phone,
             "isdCode": clean_isd,
             "otp": otp,
-            "deviceAttribute": "android",
+            "deviceAttribute": device_attribute,
+            "uuid": target_uuid,
         }
         headers = {
             "Content-Type": "application/json",
             "App-Id": self.app_id,
             "Source-Device-Id": self.device_id,
+            "Source": "USER",
         }
 
         session = await self._get_session()
@@ -199,11 +254,17 @@ class QuboAuth:
                         f"OTP verification failed (HTTP {response.status}): {text}"
                     )
                 data = json.loads(text)
+                if isinstance(data, list) and data:
+                    data = data[0]
+                if not isinstance(data, dict):
+                    raise QuboAuthError(f"Unexpected response format from OTP verification: {data}")
         except aiohttp.ClientError as err:
             raise QuboConnectionError(f"Network error verifying OTP: {err}") from err
+        except json.JSONDecodeError as err:
+            raise QuboAuthError(f"Invalid JSON returned by server: {err}") from err
 
         access_token = data.get("accessToken")
-        user_uuid = data.get("uuid") or data.get("userUUID")
+        user_uuid = data.get("uuid") or data.get("userUUID") or data.get("userId")
         if not access_token or not user_uuid:
             raise QuboAuthError(f"Missing tokens in OTP response: {data}")
 

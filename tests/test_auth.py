@@ -36,7 +36,7 @@ async def test_email_login_success():
     }
 
     mock_resp = MockClientResponse(200, json.dumps(response_payload))
-    with patch("aiohttp.ClientSession.post", return_value=mock_resp):
+    with patch("aiohttp.ClientSession.post", return_value=mock_resp) as mock_post:
         tokens = await auth.login_with_email("user@example.com", "mypassword")
 
         assert tokens.access_token == response_payload["accessToken"]
@@ -44,6 +44,16 @@ async def test_email_login_success():
         assert tokens.user_uuid == "user-999"
         assert auth.is_authenticated is True
         assert auth.user_uuid == "user-999"
+        args, kwargs = mock_post.call_args
+        assert kwargs["headers"]["App-Id"] == "com.hero.iot"
+        assert kwargs["headers"]["Source"] == "USER"
+        assert kwargs["headers"]["Token-Type"] == "USER"
+        assert "Source-Device-Id" in kwargs["headers"]
+        assert kwargs["json"]["username"] == "user@example.com"
+        assert kwargs["json"]["email"] == "user@example.com"
+        assert kwargs["json"]["password"] == "mypassword"
+        assert kwargs["json"]["deviceAttribute"] == "Xiaomi_2201117TI"
+        assert "/user/login?system=CS" in args[0]
 
     await auth.close()
 
@@ -63,19 +73,21 @@ async def test_email_login_invalid_credentials():
 
 @pytest.mark.asyncio
 async def test_phone_otp_flow():
-    """Verify phone OTP request and verification with required App-Id and deviceAttribute."""
+    """Verify phone OTP request and verification with required App-Id, Source, and deviceAttribute."""
     auth = QuboAuth(device_id="test-device-uuid")
 
-    mock_resp_request = MockClientResponse(200, json.dumps({"status": "OTP_SENT"}))
+    mock_resp_request = MockClientResponse(200, json.dumps({"uuid": "session-123", "status": "OTP_SENT"}))
     with patch("aiohttp.ClientSession.post", return_value=mock_resp_request) as mock_post:
         req_res = await auth.request_phone_otp("9876543210", "+91")
         assert req_res["status"] == "OTP_SENT"
+        assert req_res["uuid"] == "session-123"
         # Assert headers and payload
         args, kwargs = mock_post.call_args
         assert kwargs["headers"]["App-Id"] == "com.hero.iot"
+        assert kwargs["headers"]["Source"] == "USER"
         assert kwargs["headers"]["Source-Device-Id"] == "test-device-uuid"
-        assert kwargs["json"]["isdCode"] == "91"
-        assert kwargs["json"]["deviceAttribute"] == "android"
+        assert kwargs["json"]["isdCode"] == "+91"
+        assert kwargs["json"]["deviceAttribute"] == "Xiaomi_2201117TI"
 
     otp_payload = {
         "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjIwMDAwMDAwMDAsInV1aWQiOiJ1c2VyLTg4OCJ9.sig",
@@ -84,14 +96,46 @@ async def test_phone_otp_flow():
     }
     mock_resp_verify = MockClientResponse(200, json.dumps(otp_payload))
     with patch("aiohttp.ClientSession.post", return_value=mock_resp_verify) as mock_post:
-        tokens = await auth.verify_phone_otp("9876543210", "1234", isd_code="91")
+        tokens = await auth.verify_phone_otp("9876543210", "1234", isd_code="+91")
         assert tokens.user_uuid == "user-888"
         assert tokens.access_token == otp_payload["accessToken"]
         args, kwargs = mock_post.call_args
         assert kwargs["headers"]["App-Id"] == "com.hero.iot"
-        assert kwargs["json"]["deviceAttribute"] == "android"
+        assert kwargs["headers"]["Source"] == "USER"
+        assert kwargs["json"]["uuid"] == "session-123"
+        assert kwargs["json"]["deviceAttribute"] == "Xiaomi_2201117TI"
 
     await auth.close()
+
+
+@pytest.mark.asyncio
+async def test_phone_otp_multi_account_list():
+    """Verify phone OTP verification succeeds when server returns a list of accounts."""
+    auth = QuboAuth(device_id="test-device-uuid")
+
+    multi_account_payload = [
+        {
+            "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjIwMDAwMDAwMDAsInV1aWQiOiJ1c2VyLTExMSJ9.sig",
+            "refreshToken": "ref-111",
+            "uuid": "user-111",
+        },
+        {
+            "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjIwMDAwMDAwMDAsInV1aWQiOiJ1c2VyLTIyMiJ9.sig",
+            "refreshToken": "ref-222",
+            "uuid": "user-222",
+        },
+    ]
+    mock_resp_verify = MockClientResponse(200, json.dumps(multi_account_payload))
+    with patch("aiohttp.ClientSession.post", return_value=mock_resp_verify):
+        tokens = await auth.verify_phone_otp(
+            "9245419833", "865321", isd_code="+91", session_uuid="session-multi"
+        )
+        assert tokens.user_uuid == "user-111"
+        assert tokens.access_token == multi_account_payload[0]["accessToken"]
+        assert tokens.refresh_token == "ref-111"
+
+    await auth.close()
+
 
 
 @pytest.mark.asyncio

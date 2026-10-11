@@ -16,7 +16,7 @@ STUN_SERVER_HOST: str = "stun6.platform.quboworld.com"
 STUN_SERVER_PORT: int = 5349
 
 # REST API Paths
-PATH_LOGIN_EMAIL: str = "/sms/api/v1/sp/{sp}/user/emailprofile/login"
+PATH_LOGIN_EMAIL: str = "/sms/api/v1/sp/{sp}/user/login?system=CS"
 PATH_LOGIN_PHONE_REQUEST: str = "/sms/api/v1/sp/{sp}/user/phone/login"
 PATH_LOGIN_PHONE_VERIFY: str = "/sms/api/v1/sp/{sp}/user/phone/verify"
 PATH_AUTH_REFRESH: str = "/sms/api/v1/sp/{sp}/users/{user_uuid}/auth/refresh"
