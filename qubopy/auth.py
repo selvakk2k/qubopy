@@ -14,6 +14,7 @@ import aiohttp
 from qubopy.const import (
     DEFAULT_APP_ID,
     DEFAULT_BASE_URL,
+    DEFAULT_DEVICE_ATTRIBUTE,
     DEFAULT_SP_ID,
     PATH_AUTH_REFRESH,
     PATH_LOGIN_EMAIL,
@@ -127,7 +128,7 @@ class QuboAuth:
         self,
         email: str,
         password: str,
-        device_attribute: str = "Xiaomi_2201117TI",
+        device_attribute: str = DEFAULT_DEVICE_ATTRIBUTE,
     ) -> TokenPayload:
         """Authenticate using account email and password."""
         url = f"{self.base_url}{PATH_LOGIN_EMAIL.format(sp=self.sp_id)}"
@@ -183,7 +184,7 @@ class QuboAuth:
         self,
         phone: str,
         isd_code: str = "+91",
-        device_attribute: str = "Xiaomi_2201117TI",
+        device_attribute: str = DEFAULT_DEVICE_ATTRIBUTE,
     ) -> dict[str, Any]:
         """Request a one-time SMS password for phone login."""
         url = f"{self.base_url}{PATH_LOGIN_PHONE_REQUEST.format(sp=self.sp_id)}"
@@ -220,7 +221,7 @@ class QuboAuth:
         otp: str,
         isd_code: str = "+91",
         session_uuid: str | None = None,
-        device_attribute: str = "Xiaomi_2201117TI",
+        device_attribute: str = DEFAULT_DEVICE_ATTRIBUTE,
     ) -> TokenPayload:
         """Verify received SMS OTP and obtain session tokens."""
         url = f"{self.base_url}{PATH_LOGIN_PHONE_VERIFY.format(sp=self.sp_id)}"
