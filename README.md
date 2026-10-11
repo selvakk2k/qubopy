@@ -19,12 +19,12 @@ An asynchronous Python client library and local Bluetooth Low Energy (BLE) crede
   - [2. From Source or GitHub Release](#2-from-source-or-github-release)
 - [Authentication & Account Guidelines](#authentication--account-guidelines)
 - [Quick Start](#quick-start)
-  - [1. Authentication & Client Setup](#1-authentication--client-setup)
-  - [2. Smart Plugs (HSP Series)](#2-smart-plugs-hsp-series)
-  - [3. Air Purifiers (HPH Series)](#3-air-purifiers-hph-series)
-  - [4. Smart Lighting (HLB Series)](#4-smart-lighting-hlb-series)
-  - [5. Cameras & Doorbells (HCP / HCD Series)](#5-cameras--doorbells-hcp--hcd-series)
-  - [6. Smart Door Locks (HLM / HLW Series)](#6-smart-door-locks-hlm--hlw-series)
+  - [1. Authentication & Client Setup (Hardware Verified)](#1-authentication--client-setup--hardware-verified)
+  - [2. Smart Plugs - HSP Series (API Modeled)](#2-smart-plugs-hsp-series--api-modeled--untested)
+  - [3. Air Purifiers - HPH Series (API Modeled)](#3-air-purifiers-hph-series--api-modeled--untested)
+  - [4. Smart Lighting - HLB Series (API Modeled)](#4-smart-lighting-hlb-series--api-modeled--untested)
+  - [5. Cameras & Doorbells - HCP / HCD Series (Hardware Verified)](#5-cameras--doorbells-hcp--hcd-series--hardware-verified)
+  - [6. Smart Door Locks - HLM / HLW Series](#6-smart-door-locks-hlm--hlw-series)
 - [Command Line Interface (CLI)](#command-line-interface-cli)
 - [IP Camera & Media Streaming Architecture](#ip-camera--media-streaming-architecture)
 - [Local BLE Architecture for Smart Locks](#local-ble-architecture-for-smart-locks)
@@ -46,16 +46,17 @@ The Qubo smart home ecosystem consists of two distinct communication models:
 
 ## Hardware Compatibility Matrix
 
-| Series | Category | Example Models | Functions & Sensors | Integration Mode |
-| :--- | :--- | :--- | :--- | :--- |
-| `HSP` | Smart Plugs | `HSP01` (16A), `HSP02` (10A), `HSP10` | Switch, Voltage, Current, Active Power (W), Energy (kWh) | Cloud REST |
-| `HPH` | Air Purifiers | `HPH01`–`HPH08` (Q200 to Q1000) | Fan Speed, Auto/Sleep Presets, PM2.5, Filter Life, Child Lock | Cloud REST |
-| `HLB` | Smart Lighting | `HLB01`, `HLB10` | State, Brightness, RGB Color, White Temperature | Cloud REST |
-| `HLM` / `HLW` | Door Locks | `HLM01`–`HLM10`, `HLR01`, `HLW01` | Lock/Unlock, Battery Level, Offline BLE Key Export | Cloud Gateway (✅ Hardware Verified) / Local BLE (⚠️ Experimental) |
-| `HCP` / `HCO` | Cameras | `HCP01`–`HCP19`, `HCO04`–`HCO07` | RTSP Stream Query, Privacy Mask, Siren, Motion Status | Cloud REST + Local RTSP |
-| `HCD` | Doorbells | `HCD01`, `HCD04` | Ring Event, Chime, RTSP Stream | Cloud REST + Local RTSP |
-| `HDS` / `HGS` | Security | `HDS01` (Contact), `HGS01` (Gas), `HSA01` (Smoke) | Binary Alarms, Battery Telemetry | Cloud REST |
-| `HDT` | Climate | `HDT01` | Temperature (°C), Humidity (%) | Cloud REST |
+| Series | Category | Example Models | Functions & Sensors | Integration Mode | Status |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **Auth** | Cloud Session | N/A | Email + Password, Phone SMS OTP | Cloud REST (`/user/login?system=CS`, `/phone/verify`) | `✅ Hardware Verified` |
+| `HCP` / `HCO` | Cameras | `HCP01`–`HCP19`, `HCO04`–`HCO07` | RTSP Stream Query, Privacy Mask, Siren, Motion Status | Cloud REST + Local RTSP / P2P | `✅ Hardware Verified` |
+| `HCD` | Doorbells | `HCD01`, `HCD04` | Ring Event, Chime, RTSP Stream / LAN P2P | Cloud REST + Local RTSP / P2P | `✅ Hardware Verified` |
+| `HLM` / `HLW` | Door Locks | `HLM01`–`HLM10`, `HLR01`, `HLW01` | Remote Unlock, Battery Level, Offline BLE Key Export | Cloud Gateway / Local BLE | Gateway: `✅ Hardware Verified`<br>BLE: `⚠️ Experimental` |
+| `HSP` | Smart Plugs | `HSP01` (16A), `HSP02` (10A), `HSP10` | Switch, Voltage, Current, Active Power (W), Energy (kWh) | Cloud REST | `⚠️ API Modeled` |
+| `HPH` | Air Purifiers | `HPH01`–`HPH08` (Q200 to Q1000) | Fan Speed, Auto/Sleep Presets, PM2.5, Filter Life, Child Lock | Cloud REST | `⚠️ API Modeled` |
+| `HLB` | Smart Lighting | `HLB01`, `HLB10` | State, Brightness, RGB Color, White Temperature | Cloud REST | `⚠️ API Modeled` |
+| `HDS` / `HGS` | Security | `HDS01` (Contact), `HGS01` (Gas), `HSA01` (Smoke) | Binary Alarms, Battery Telemetry | Cloud REST | `⚠️ API Modeled` |
+| `HDT` | Climate | `HDT01` | Temperature (°C), Humidity (%) | Cloud REST | `⚠️ API Modeled` |
 
 ---
 
@@ -116,9 +117,9 @@ python -m qubopy --help
 
 ## Quick Start
 
-### 1. Authentication & Client Setup
+### 1. Authentication & Client Setup (`✅ Hardware Verified`)
 
-Authenticate using either your email and password or phone SMS OTP, then initialize the client to discover all devices:
+Authenticate using either your email and password or phone SMS OTP. Developers can pass an optional `device_attribute` parameter to set the friendly device label shown in the official Qubo mobile app:
 
 ```python
 import asyncio
@@ -127,12 +128,25 @@ from qubopy import QuboAuth, QuboClient
 async def main():
     auth = QuboAuth()
 
-    # Option A: Email login
-    await auth.login_with_email("<email>", "<password>")
+    # Option A: Email login (with optional custom device label)
+    await auth.login_with_email(
+        "<email>",
+        "<password>",
+        device_attribute="Home Assistant",  # Optional: custom label in Qubo app (default: "Qubopy")
+    )
 
     # Option B: Phone SMS OTP login
-    # res = await auth.request_phone_otp("<phone_number>", isd_code="+91")
-    # await auth.verify_phone_otp("<phone_number>", "<otp_code>", session_uuid=res["uuid"])
+    # res = await auth.request_phone_otp(
+    #     "<phone_number>",
+    #     isd_code="+91",
+    #     device_attribute="Home Assistant",
+    # )
+    # await auth.verify_phone_otp(
+    #     "<phone_number>",
+    #     "<otp_code>",
+    #     session_uuid=res["uuid"],
+    #     device_attribute="Home Assistant",
+    # )
 
     async with QuboClient(auth) as client:
         # Discover all homes and paired devices
@@ -146,14 +160,14 @@ asyncio.run(main())
 
 ---
 
-### 2. Smart Plugs (HSP Series)
+### 2. Smart Plugs (HSP Series) (`⚠️ API Modeled / Untested`)
 
-Control smart plugs and monitor active electrical metrics:
+*Note: Telemetry fields and power controls are modeled from APK application metadata. Community testing with physical smart plugs is welcome.*
 
 ```python
 from qubopy.devices import QuboPlug
 
-# Assuming 'device' is an instance of QuboPlug from get_all_devices()
+# Assuming 'plug' is an instance of QuboPlug from get_all_devices()
 async def operate_plug(plug: QuboPlug):
     # Toggle power state
     await plug.turn_on()
@@ -169,9 +183,9 @@ async def operate_plug(plug: QuboPlug):
 
 ---
 
-### 3. Air Purifiers (HPH Series)
+### 3. Air Purifiers (HPH Series) (`⚠️ API Modeled / Untested`)
 
-Control fan speeds, switch preset modes, and inspect air quality:
+*Note: Speed controls, presets, and sensor readings are modeled from APK application metadata. Community testing with physical air purifiers is welcome.*
 
 ```python
 from qubopy.devices import QuboAirPurifier
@@ -191,9 +205,9 @@ async def operate_purifier(purifier: QuboAirPurifier):
 
 ---
 
-### 4. Smart Lighting (HLB Series)
+### 4. Smart Lighting (HLB Series) (`⚠️ API Modeled / Untested`)
 
-Control power, adjust brightness, change RGB colors, and tune color temperature:
+*Note: Lighting state, dimmer, and RGB/CCT attributes are modeled from APK application metadata. Community testing with physical smart bulbs is welcome.*
 
 ```python
 from qubopy.devices import QuboLight
@@ -211,9 +225,9 @@ async def operate_light(light: QuboLight):
 
 ---
 
-### 5. Cameras & Doorbells (HCP / HCD Series)
+### 5. Cameras & Doorbells (HCP / HCD Series) (`✅ Hardware Verified`)
 
-Query RTSP stream credentials, toggle privacy shutters, and sound deterrent sirens:
+Query RTSP stream credentials, toggle privacy shutters, and sound deterrent sirens. Cloud RTSP URL minting and LAN P2P H.264 stream decryption are verified on physical hardware:
 
 ```python
 from qubopy.devices import QuboCamera
@@ -238,8 +252,8 @@ async def operate_camera(camera: QuboCamera):
 
 Qubo smart door locks support two distinct integration strategies:
 
-#### Method A: Cloud Gateway Unlock (Hardware Verified)
-If you have an in-home Qubo gateway device (such as a Video Doorbell Pro or Smart Camera) paired in the same home unit, unlock directly through the cloud gateway bridge:
+#### Method A: Cloud Gateway Unlock (`✅ Hardware Verified`)
+Actuates the lock via an in-home Qubo gateway bridge (such as a Video Doorbell Pro or Smart Camera). Verified on physical hardware with live bolt movement:
 
 ```python
 from qubopy.devices import QuboLock
@@ -250,7 +264,7 @@ async def unlock_door(lock: QuboLock):
     print(f"Unlock result: {result}")
 ```
 
-#### Method B: Local BLE Offline Credentials (Experimental)
+#### Method B: Local BLE Offline Credentials (`⚠️ Experimental`)
 
 > [!CAUTION]
 > **Untested / Experimental**: The BLE lock credential extraction and GATT definitions below were derived from reverse-engineering the official mobile application. They have **not been tested or verified on physical smart lock hardware**. Testing and contributions from community members with physical locks are welcome.
