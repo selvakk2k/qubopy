@@ -22,6 +22,8 @@ An asynchronous Python client library and local Bluetooth Low Energy (BLE) crede
 - [Command Line Interface (CLI)](#command-line-interface-cli)
 - [IP Camera & Media Streaming Architecture](#ip-camera--media-streaming-architecture)
 - [Local BLE Architecture for Smart Locks](#local-ble-architecture-for-smart-locks)
+  - [GATT Services and Characteristics](#gatt-services-and-characteristics)
+  - [Experimental ESPHome Configuration](#experimental-esphome-configuration)
 - [Contributing & Testing](#contributing--testing)
 - [Credits & License](#credits--license)
 
@@ -32,7 +34,7 @@ An asynchronous Python client library and local Bluetooth Low Energy (BLE) crede
 The Qubo smart home ecosystem consists of two distinct communication models:
 
 1. **Wi-Fi Appliances (Cloud Managed)**: Smart Plugs, Air Purifiers, Smart Bulbs, and Security Cameras connect outbound to Qubo cloud services over TLS REST and MQTT. `qubopy` interacts with Qubo's cloud REST gateway (`srvcapp.platform.quboworld.com`) to discover units, retrieve shadow states, and dispatch control commands.
-2. **Bluetooth Smart Locks (100% Local BLE Control)**: Qubo smart door locks (`HLM`/`HLW` series) operate via Bluetooth Low Energy without an integrated Wi-Fi radio. The mobile app syncs offline authentication keys (`dbtauthkey`) and offline PIN seeds (`dbtoffkey`) from the cloud. `qubopy` extracts these cryptographic keys directly from the account, allowing local integration with Home Assistant Bluetooth Proxies and ESPHome without requiring active internet access for lock operations.
+2. **Bluetooth Smart Locks (Experimental Local BLE)**: Qubo smart door locks (`HLM`/`HLW` series) operate via Bluetooth Low Energy without an integrated Wi-Fi radio. The mobile app syncs offline authentication keys (`dbtauthkey`) and offline PIN seeds (`dbtoffkey`) from the cloud. `qubopy` extracts these cryptographic keys from the account for potential local integration with Home Assistant Bluetooth Proxies and ESPHome. *Note: BLE lock protocols were derived from static analysis of the official mobile app and remain untested on physical hardware.*
 
 ---
 
@@ -43,7 +45,7 @@ The Qubo smart home ecosystem consists of two distinct communication models:
 | `HSP` | Smart Plugs | `HSP01` (16A), `HSP02` (10A), `HSP10` | Switch, Voltage, Current, Active Power (W), Energy (kWh) | Cloud REST |
 | `HPH` | Air Purifiers | `HPH01`–`HPH08` (Q200 to Q1000) | Fan Speed, Auto/Sleep Presets, PM2.5, Filter Life, Child Lock | Cloud REST |
 | `HLB` | Smart Lighting | `HLB01`, `HLB10` | State, Brightness, RGB Color, White Temperature | Cloud REST |
-| `HLM` / `HLW` | Door Locks | `HLM01`–`HLM10`, `HLR01`, `HLW01` | Lock/Unlock, Battery Level, Offline BLE Key Export | Local BLE + Cloud Sync |
+| `HLM` / `HLW` | Door Locks | `HLM01`–`HLM10`, `HLR01`, `HLW01` | Lock/Unlock, Battery Level, Offline BLE Key Export | ⚠️ Experimental (Local BLE + Cloud Sync) |
 | `HCP` / `HCO` | Cameras | `HCP01`–`HCP19`, `HCO04`–`HCO07` | RTSP Stream Query, Privacy Mask, Siren, Motion Status | Cloud REST + Local RTSP |
 | `HCD` | Doorbells | `HCD01`, `HCD04` | Ring Event, Chime, RTSP Stream | Cloud REST + Local RTSP |
 | `HDS` / `HGS` | Security | `HDS01` (Contact), `HGS01` (Gas), `HSA01` (Smoke) | Binary Alarms, Battery Telemetry | Cloud REST |
@@ -90,7 +92,7 @@ from qubopy.devices import QuboPlug
 async def main():
     # Authenticate via email or phone OTP
     auth = QuboAuth()
-    await auth.login_with_email("user@example.com", "your_password")
+    await auth.login_with_email("<email>", "<password>")
 
     # Connect client
     async with QuboClient(auth) as client:
@@ -112,7 +114,10 @@ asyncio.run(main())
 
 ### 2. Exporting BLE Smart Lock Credentials
 
-Extract the offline cryptographic keys for use in Home Assistant or ESPHome:
+> [!CAUTION]
+> **Untested / Experimental**: The BLE lock credential extraction and GATT definitions below were derived from reverse-engineering the official mobile application. They have **not been tested or verified on physical smart lock hardware**. Testing and contributions from community members with physical locks are welcome.
+
+Extract the offline cryptographic keys for experimental use in Home Assistant or ESPHome:
 
 ```python
 import asyncio
@@ -121,7 +126,7 @@ from qubopy.devices import QuboLock
 
 async def main():
     auth = QuboAuth()
-    await auth.login_with_email("user@example.com", "your_password")
+    await auth.login_with_email("<email>", "<password>")
 
     async with QuboClient(auth) as client:
         devices = await client.get_all_devices()
@@ -129,7 +134,7 @@ async def main():
 
         for lock in locks:
             keys = await lock.get_ble_lock_keys()
-            print("=== Qubo BLE Lock Credentials ===")
+            print("=== Qubo BLE Lock Credentials (Experimental) ===")
             print(f"Device Name: {keys.device_name}")
             print(f"Bluetooth MAC: {keys.mac_address}")
             print(f"Auth Key: {keys.auth_key}")
@@ -143,25 +148,25 @@ asyncio.run(main())
 
 ## Command Line Interface (CLI)
 
-`qubopy` provides a command-line interface for authenticating, testing, and extracting keys:
+`qubopy` provides a command-line interface for authenticating, testing, and inspecting device parameters:
 
 ```bash
 # Authenticate using email and password (default label: Qubopy)
-python -m qubopy login --email user@example.com --password "secret"
+python -m qubopy login --email <email> --password <password>
 
 # Authenticate with a custom device label shown in the Qubo mobile app
-python -m qubopy login --email user@example.com --password "secret" --device-name "Home Assistant"
+python -m qubopy login --email <email> --password <password> --device-name <device_label>
 
 # Authenticate using phone number and SMS OTP (interactive prompt)
-python -m qubopy login-phone --phone 9876543210 --isd +91
+python -m qubopy login-phone --phone <phone_number> --isd +91
 
 # Verify SMS OTP in a separate step (if not completed interactively)
-python -m qubopy verify-otp --otp 123456
+python -m qubopy verify-otp --otp <otp_code>
 
 # List all units and paired devices
 python -m qubopy list-devices
 
-# Export local BLE credentials for smart locks
+# Export local BLE credentials for smart locks (experimental)
 python -m qubopy export-ble-keys --device-id <device_uuid>
 ```
 
@@ -179,7 +184,10 @@ Qubo security cameras (`HCP` / `HCO` series) and video doorbells (`HCD` series) 
 
 ## Local BLE Architecture for Smart Locks
 
-Qubo Bluetooth smart locks are manufactured by Deftun (hardware architecture `P01`). The lock parameters stored in the cloud include:
+> [!CAUTION]
+> **Experimental & Hardware-Unverified**: All BLE lock definitions below were reverse-engineered from application binaries. They have not been validated against physical smart locks.
+
+Qubo Bluetooth smart locks store offline parameters in the cloud. The parameters extracted from account metadata include:
 
 * `dmac`: Physical Bluetooth MAC address.
 * `dbtauthkey`: Cryptographic session key used during GATT handshake.
@@ -192,7 +200,43 @@ Qubo Bluetooth smart locks are manufactured by Deftun (hardware architecture `P0
 * **Auth / Write Characteristic**: `0000fee1-0000-1000-8000-00805f9b34fb`
 * **Notify / State Characteristic**: `0000fee2-0000-1000-8000-00805f9b34fb`
 
-Once keys are exported via `qubopy`, an ESP32 or local Bluetooth controller can establish a direct local connection without connecting to Qubo cloud servers.
+### Experimental ESPHome Configuration
+
+The following configuration demonstrates how an ESP32 board running ESPHome can listen to the lock's state characteristic and dispatch write commands:
+
+```yaml
+# Experimental ESPHome Configuration (Untested on Physical Lock Hardware)
+# Requires an ESP32 board with Bluetooth Low Energy enabled
+
+esp32_ble_tracker:
+
+ble_client:
+  - mac_address: "XX:XX:XX:XX:XX:XX"  # Replace with exported Bluetooth MAC (dmac)
+    id: qubo_lock_ble
+
+sensor:
+  # Notify/State Characteristic for Lock Status & Battery Telemetry
+  - platform: ble_client
+    type: characteristic
+    ble_client_id: qubo_lock_ble
+    id: lock_state
+    name: "Qubo Lock State"
+    service_uuid: "0000fee0-0000-1000-8000-00805f9b34fb"
+    characteristic_uuid: "0000fee2-0000-1000-8000-00805f9b34fb"
+    notify: true
+
+button:
+  # Auth/Write Characteristic for Dispatching Local Handshake Packets
+  - platform: template
+    name: "Qubo Unlock (Experimental)"
+    on_press:
+      - ble_client.ble_write:
+          id: qubo_lock_ble
+          service_uuid: "0000fee0-0000-1000-8000-00805f9b34fb"
+          characteristic_uuid: "0000fee1-0000-1000-8000-00805f9b34fb"
+          # Payload requires AES handshake using exported dbtauthkey
+          value: [0x00]
+```
 
 ---
 

@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "qubopy"
 version = "0.1.0-alpha.1"
-description = "Asynchronous Python client library and local BLE enabler for Qubo smart home devices and Deftun locks"
+description = "Asynchronous Python client library and local BLE enabler for Qubo smart home devices"
 readme = "README.md"
 authors = [
     { name = "Selva Kumaran K", email = "selvakk2k@users.noreply.github.com" }
