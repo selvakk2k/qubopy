@@ -215,15 +215,15 @@ class QuboAuth:
         except aiohttp.ClientError as err:
             raise QuboConnectionError(f"Network error requesting OTP: {err}") from err
 
-    async def verify_phone_otp(
+    async def get_phone_otp_profiles(
         self,
         phone: str,
         otp: str,
         isd_code: str = "+91",
         session_uuid: str | None = None,
         device_attribute: str = DEFAULT_DEVICE_ATTRIBUTE,
-    ) -> TokenPayload:
-        """Verify received SMS OTP and obtain session tokens."""
+    ) -> list[dict[str, Any]]:
+        """Verify SMS OTP and return all matching account profiles."""
         url = f"{self.base_url}{PATH_LOGIN_PHONE_VERIFY.format(sp=self.sp_id)}"
         clean_isd = isd_code if isd_code.startswith("+") else f"+{isd_code}"
         target_uuid = session_uuid or self._login_uuid
@@ -255,21 +255,68 @@ class QuboAuth:
                         f"OTP verification failed (HTTP {response.status}): {text}"
                     )
                 data = json.loads(text)
-                if isinstance(data, list) and data:
-                    data = data[0]
-                if not isinstance(data, dict):
-                    raise QuboAuthError(f"Unexpected response format from OTP verification: {data}")
+                if isinstance(data, dict):
+                    return [data]
+                if isinstance(data, list):
+                    return data
+                raise QuboAuthError(f"Unexpected response format from OTP verification: {data}")
         except aiohttp.ClientError as err:
             raise QuboConnectionError(f"Network error verifying OTP: {err}") from err
         except json.JSONDecodeError as err:
             raise QuboAuthError(f"Invalid JSON returned by server: {err}") from err
 
-        access_token = data.get("accessToken") or data.get("token")
-        user_uuid = data.get("uuid") or data.get("userUUID") or data.get("userId")
-        if not access_token or not user_uuid:
-            raise QuboAuthError(f"Missing tokens in OTP response: {data}")
+    async def verify_phone_otp(
+        self,
+        phone: str,
+        otp: str,
+        isd_code: str = "+91",
+        session_uuid: str | None = None,
+        device_attribute: str = DEFAULT_DEVICE_ATTRIBUTE,
+        profile_index: int = 0,
+        account_uuid: str | None = None,
+    ) -> TokenPayload:
+        """Verify received SMS OTP and obtain session tokens.
 
-        refresh_token = data.get("refreshToken")
+        If multiple account profiles are linked to the phone number, specify
+        either `profile_index` (default 0) or `account_uuid` to select the account.
+        """
+        profiles = await self.get_phone_otp_profiles(
+            phone=phone,
+            otp=otp,
+            isd_code=isd_code,
+            session_uuid=session_uuid,
+            device_attribute=device_attribute,
+        )
+
+        if not profiles:
+            raise QuboAuthError("No account profiles returned in OTP verification response")
+
+        selected_profile: dict[str, Any] | None = None
+        if account_uuid:
+            for p in profiles:
+                p_uuid = str(p.get("uuid") or p.get("userUUID") or p.get("userId") or "")
+                if p_uuid == account_uuid:
+                    selected_profile = p
+                    break
+            if not selected_profile:
+                raise QuboAuthError(f"Account UUID '{account_uuid}' not found among returned profiles")
+        else:
+            if profile_index < 0 or profile_index >= len(profiles):
+                raise QuboAuthError(
+                    f"Profile index {profile_index} out of range (0-{len(profiles) - 1})"
+                )
+            selected_profile = profiles[profile_index]
+
+        access_token = selected_profile.get("accessToken") or selected_profile.get("token")
+        user_uuid = (
+            selected_profile.get("uuid")
+            or selected_profile.get("userUUID")
+            or selected_profile.get("userId")
+        )
+        if not access_token or not user_uuid:
+            raise QuboAuthError(f"Missing tokens in OTP response: {selected_profile}")
+
+        refresh_token = selected_profile.get("refreshToken")
         expires_at = _decode_jwt_expiry(access_token) or (time.time() + 86400)
 
         self._tokens = TokenPayload(

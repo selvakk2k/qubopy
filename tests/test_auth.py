@@ -139,6 +139,82 @@ async def test_phone_otp_multi_account_list():
     await auth.close()
 
 
+@pytest.mark.asyncio
+async def test_get_phone_otp_profiles():
+    """Verify get_phone_otp_profiles returns all profiles returned by server."""
+    auth = QuboAuth(device_id="test-device-uuid")
+    multi_account_payload = [
+        {"uuid": "user-111", "email": "user1@example.com", "name": "User One"},
+        {"uuid": "user-222", "email": "user2@example.com", "name": "User Two"},
+    ]
+    mock_resp = MockClientResponse(200, json.dumps(multi_account_payload))
+    with patch("aiohttp.ClientSession.post", return_value=mock_resp):
+        profiles = await auth.get_phone_otp_profiles(
+            "9876543210", "865321", isd_code="+91", session_uuid="session-multi"
+        )
+        assert len(profiles) == 2
+        assert profiles[0]["email"] == "user1@example.com"
+        assert profiles[1]["uuid"] == "user-222"
+
+    await auth.close()
+
+
+@pytest.mark.asyncio
+async def test_phone_otp_select_by_index_and_uuid():
+    """Verify selecting specific profile by index or account UUID."""
+    auth = QuboAuth(device_id="test-device-uuid")
+    multi_account_payload = [
+        {
+            "token": "token-1",
+            "uuid": "user-111",
+            "email": "user1@example.com",
+            "name": "User One",
+        },
+        {
+            "token": "token-2",
+            "uuid": "user-222",
+            "email": "user2@example.com",
+            "name": "User Two",
+        },
+    ]
+
+    # Select by profile_index = 1
+    mock_resp1 = MockClientResponse(200, json.dumps(multi_account_payload))
+    with patch("aiohttp.ClientSession.post", return_value=mock_resp1):
+        tokens = await auth.verify_phone_otp(
+            "9876543210", "123456", session_uuid="session-multi", profile_index=1
+        )
+        assert tokens.user_uuid == "user-222"
+        assert tokens.access_token == "token-2"
+
+    # Select by account_uuid = "user-111"
+    mock_resp2 = MockClientResponse(200, json.dumps(multi_account_payload))
+    with patch("aiohttp.ClientSession.post", return_value=mock_resp2):
+        tokens = await auth.verify_phone_otp(
+            "9876543210", "123456", session_uuid="session-multi", account_uuid="user-111"
+        )
+        assert tokens.user_uuid == "user-111"
+        assert tokens.access_token == "token-1"
+
+    # Out of range index raises QuboAuthError
+    mock_resp3 = MockClientResponse(200, json.dumps(multi_account_payload))
+    with patch("aiohttp.ClientSession.post", return_value=mock_resp3):
+        with pytest.raises(QuboAuthError, match="Profile index 5 out of range"):
+            await auth.verify_phone_otp(
+                "9876543210", "123456", session_uuid="session-multi", profile_index=5
+            )
+
+    # Unknown UUID raises QuboAuthError
+    mock_resp4 = MockClientResponse(200, json.dumps(multi_account_payload))
+    with patch("aiohttp.ClientSession.post", return_value=mock_resp4):
+        with pytest.raises(QuboAuthError, match="Account UUID 'unknown-uuid' not found"):
+            await auth.verify_phone_otp(
+                "9876543210", "123456", session_uuid="session-multi", account_uuid="unknown-uuid"
+            )
+
+    await auth.close()
+
+
 
 @pytest.mark.asyncio
 async def test_token_refresh():

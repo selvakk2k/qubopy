@@ -36,6 +36,26 @@ def _load_session() -> dict[str, Any] | None:
         return None
 
 
+def _handle_cli_error(err: Exception) -> None:
+    """Print user-friendly CLI error messages, including token expiration guidance."""
+    msg = str(err)
+    if (
+        "ERR_AUTH_002" in msg
+        or "Invalid/Expired Token" in msg
+        or "Authentication rejected" in msg
+        or "No active session found" in msg
+    ):
+        print(
+            "Authentication Error: Session has expired or is invalid.\n"
+            "Note: Phone OTP tokens are valid for 1 hour. Please re-run:\n"
+            "  qubopy login-phone --phone <number>\n"
+            "or login with email/password if your account supports it.",
+            file=sys.stderr,
+        )
+    else:
+        print(f"Error: {err}", file=sys.stderr)
+
+
 async def _cmd_login(args: argparse.Namespace) -> int:
     auth = QuboAuth()
     device_name = getattr(args, "device_name", DEFAULT_DEVICE_ATTRIBUTE)
@@ -55,7 +75,7 @@ async def _cmd_login(args: argparse.Namespace) -> int:
         )
         return 0
     except QuboError as err:
-        print(f"Error: {err}", file=sys.stderr)
+        _handle_cli_error(err)
         return 1
     finally:
         await auth.close()
@@ -101,12 +121,37 @@ async def _cmd_login_phone(args: argparse.Namespace) -> int:
             otp = input("Enter the 6-digit OTP received on your phone: ").strip()
             if otp:
                 print("Verifying OTP ...")
+                profiles = await auth.get_phone_otp_profiles(
+                    phone,
+                    otp,
+                    isd_code=clean_isd,
+                    session_uuid=session_uuid,
+                    device_attribute=device_name,
+                )
+                if not profiles:
+                    print("Error: No account profiles returned from OTP verification.", file=sys.stderr)
+                    return 1
+
+                selected_idx = 0
+                if len(profiles) > 1:
+                    print(f"\nMultiple account profiles found ({len(profiles)}):")
+                    for idx, p in enumerate(profiles):
+                        name = p.get("name", "Unknown")
+                        email = p.get("email", "No Email")
+                        p_uuid = p.get("uuid") or p.get("userUUID") or p.get("userId", "")
+                        print(f"  [{idx}] {name} ({email}) - {p_uuid}")
+
+                    choice = input(f"Select profile [0-{len(profiles) - 1}] (default 0): ").strip()
+                    if choice.isdigit() and 0 <= int(choice) < len(profiles):
+                        selected_idx = int(choice)
+
                 tokens = await auth.verify_phone_otp(
                     phone,
                     otp,
                     isd_code=clean_isd,
                     session_uuid=session_uuid,
                     device_attribute=device_name,
+                    profile_index=selected_idx,
                 )
                 print("Phone authentication successful.")
                 print(f"User UUID: {tokens.user_uuid}")
@@ -127,7 +172,7 @@ async def _cmd_login_phone(args: argparse.Namespace) -> int:
         print("Run 'python -m qubopy verify-otp --otp <code>' to complete login.")
         return 0
     except QuboError as err:
-        print(f"Error: {err}", file=sys.stderr)
+        _handle_cli_error(err)
         return 1
     finally:
         await auth.close()
@@ -138,6 +183,8 @@ async def _cmd_verify_otp(args: argparse.Namespace) -> int:
     isd = getattr(args, "isd", "+91")
     session_uuid = getattr(args, "session_uuid", None)
     device_name = getattr(args, "device_name", None)
+    profile_idx = getattr(args, "profile_index", None)
+    account_uuid = getattr(args, "account_uuid", None)
 
     # Fall back to pending session cache if phone or session_uuid not provided
     if SESSION_TEMP_FILE.exists():
@@ -164,12 +211,38 @@ async def _cmd_verify_otp(args: argparse.Namespace) -> int:
     clean_isd = isd if isd.startswith("+") else f"+{isd}"
     print(f"Verifying OTP for phone: {clean_isd}{phone} ...")
     try:
+        profiles = await auth.get_phone_otp_profiles(
+            phone,
+            args.otp,
+            isd_code=clean_isd,
+            session_uuid=session_uuid,
+            device_attribute=device_name,
+        )
+        if not profiles:
+            print("Error: No account profiles returned from OTP verification.", file=sys.stderr)
+            return 1
+
+        selected_idx = profile_idx if profile_idx is not None else 0
+        if not account_uuid and len(profiles) > 1 and profile_idx is None and sys.stdin.isatty():
+            print(f"\nMultiple account profiles found ({len(profiles)}):")
+            for idx, p in enumerate(profiles):
+                name = p.get("name", "Unknown")
+                email = p.get("email", "No Email")
+                p_uuid = p.get("uuid") or p.get("userUUID") or p.get("userId", "")
+                print(f"  [{idx}] {name} ({email}) - {p_uuid}")
+
+            choice = input(f"Select profile [0-{len(profiles) - 1}] (default 0): ").strip()
+            if choice.isdigit() and 0 <= int(choice) < len(profiles):
+                selected_idx = int(choice)
+
         tokens = await auth.verify_phone_otp(
             phone,
             args.otp,
             isd_code=clean_isd,
             session_uuid=session_uuid,
             device_attribute=device_name,
+            profile_index=selected_idx,
+            account_uuid=account_uuid,
         )
         print("Phone authentication successful.")
         print(f"User UUID: {tokens.user_uuid}")
@@ -186,7 +259,7 @@ async def _cmd_verify_otp(args: argparse.Namespace) -> int:
             pass
         return 0
     except QuboError as err:
-        print(f"Error: {err}", file=sys.stderr)
+        _handle_cli_error(err)
         return 1
     finally:
         await auth.close()
@@ -216,7 +289,7 @@ async def _cmd_list_devices(args: argparse.Namespace) -> int:
     try:
         client = await _get_authenticated_client(args)
     except QuboError as err:
-        print(f"Error: {err}", file=sys.stderr)
+        _handle_cli_error(err)
         return 1
 
     try:
@@ -240,7 +313,7 @@ async def _cmd_list_devices(args: argparse.Namespace) -> int:
             print()
             return 0
     except QuboError as err:
-        print(f"Error: {err}", file=sys.stderr)
+        _handle_cli_error(err)
         return 1
 
 
@@ -248,7 +321,7 @@ async def _cmd_export_ble_keys(args: argparse.Namespace) -> int:
     try:
         client = await _get_authenticated_client(args)
     except QuboError as err:
-        print(f"Error: {err}", file=sys.stderr)
+        _handle_cli_error(err)
         return 1
 
     try:
@@ -287,21 +360,22 @@ async def _cmd_export_ble_keys(args: argparse.Namespace) -> int:
 
             return 0
     except QuboError as err:
-        print(f"Error: {err}", file=sys.stderr)
+        _handle_cli_error(err)
         return 1
 
 
 async def _cmd_unlock(args: argparse.Namespace) -> int:
-    auth = _create_auth_from_session(args)
-    if not auth.is_authenticated:
-        print("Error: No active session. Run 'qubopy login' first.", file=sys.stderr)
+    try:
+        client = await _get_authenticated_client(args)
+    except QuboError as err:
+        _handle_cli_error(err)
         return 1
 
     device_id = args.device_id
     gateway_id = getattr(args, "gateway_id", None)
     print(f"Unlocking device {device_id} ...")
     try:
-        async with QuboClient(auth) as client:
+        async with client:
             devices = await client.get_all_devices()
             target = next((d for d in devices if d.device_id == device_id), None)
             if not target:
@@ -316,7 +390,7 @@ async def _cmd_unlock(args: argparse.Namespace) -> int:
             print(f"Response: {res}")
             return 0
     except QuboError as err:
-        print(f"Error: {err}", file=sys.stderr)
+        _handle_cli_error(err)
         return 1
 
 
@@ -324,7 +398,7 @@ async def _cmd_stream(args: argparse.Namespace) -> int:
     try:
         client = await _get_authenticated_client(args)
     except QuboError as err:
-        print(f"Error: {err}", file=sys.stderr)
+        _handle_cli_error(err)
         return 1
 
     device_id = getattr(args, "device_id", None)
@@ -352,7 +426,7 @@ async def _cmd_stream(args: argparse.Namespace) -> int:
             print("\nYou can open this URL directly in VLC, ffplay, go2rtc, or Home Assistant.")
             return 0
     except QuboError as err:
-        print(f"Error: {err}", file=sys.stderr)
+        _handle_cli_error(err)
         return 1
 
 
@@ -360,7 +434,7 @@ async def _cmd_dashcam_wifi(args: argparse.Namespace) -> int:
     try:
         client = await _get_authenticated_client(args)
     except QuboError as err:
-        print(f"Error: {err}", file=sys.stderr)
+        _handle_cli_error(err)
         return 1
 
     device_id = getattr(args, "device_id", None)
@@ -394,7 +468,7 @@ async def _cmd_dashcam_wifi(args: argparse.Namespace) -> int:
             print(f"  Speed Warning  : {target.overspeed_limit or 'Off'} {target.speed_unit}")
             return 0
     except QuboError as err:
-        print(f"Error: {err}", file=sys.stderr)
+        _handle_cli_error(err)
         return 1
 
 
@@ -436,13 +510,25 @@ def main() -> None:
         help="Session UUID from login-phone (optional if login-phone was just run)",
     )
     p_otp.add_argument(
+        "--profile-index",
+        type=int,
+        default=None,
+        help="Profile index to select if multiple accounts exist (default: 0)",
+    )
+    p_otp.add_argument(
+        "--account-uuid",
+        help="Specific User UUID to select from profile list",
+    )
+    p_otp.add_argument(
         "--device-name",
         default=DEFAULT_DEVICE_ATTRIBUTE,
         help=f"Device label shown in Qubo app (default: {DEFAULT_DEVICE_ATTRIBUTE})",
     )
 
-    # list-devices
-    p_list = subparsers.add_parser("list-devices", help="List all registered devices")
+    # list-devices (with 'devices' alias)
+    p_list = subparsers.add_parser(
+        "list-devices", aliases=["devices"], help="List all registered devices"
+    )
     p_list.add_argument("--token", help="Override JWT access token")
     p_list.add_argument("--user-uuid", help="Override User UUID")
 
@@ -483,7 +569,7 @@ def main() -> None:
             sys.exit(loop.run_until_complete(_cmd_login_phone(args)))
         elif args.command == "verify-otp":
             sys.exit(loop.run_until_complete(_cmd_verify_otp(args)))
-        elif args.command == "list-devices":
+        elif args.command in ("list-devices", "devices"):
             sys.exit(loop.run_until_complete(_cmd_list_devices(args)))
         elif args.command == "export-ble-keys":
             sys.exit(loop.run_until_complete(_cmd_export_ble_keys(args)))

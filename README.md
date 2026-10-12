@@ -52,6 +52,7 @@ The Qubo smart home ecosystem consists of two distinct communication models:
 | **Auth** | Cloud Session | N/A | Email + Password, Phone SMS OTP | Cloud REST (`/user/login?system=CS`, `/phone/verify`) | `✅ Hardware Verified` |
 | `HCP` / `HCO` | Cameras | `HCP01`–`HCP19`, `HCO04`–`HCO07` | RTSP Stream Query, Privacy Mask, Siren, Motion Status | Cloud REST + Local RTSP / P2P | `✅ Hardware Verified` |
 | `HCD` | Doorbells | `HCD01`, `HCD04` | Ring Event, Chime, RTSP Stream / LAN P2P | Cloud REST + Local RTSP / P2P | `✅ Hardware Verified` |
+| `HCA` | Dashcams | `HCA08B`, Smart Dashcam Pro | In-Car Wi-Fi AP Credentials, Parking Mode, Speed Warning | Cloud REST | `✅ Hardware Verified` |
 | `HLM` / `HLW` | Door Locks | `HLM01`–`HLM10`, `HLR01`, `HLW01` | Remote Unlock, Battery Level, Offline BLE Key Export | Cloud Gateway / Local BLE | Gateway: `✅ Hardware Verified`<br>BLE: `⚠️ Experimental` |
 | `HSP` | Smart Plugs | `HSP01` (16A), `HSP02` (10A), `HSP10` | Switch, Voltage, Current, Active Power (W), Energy (kWh) | Cloud REST | `⚠️ API Modeled` |
 | `HPH` | Air Purifiers | `HPH01`–`HPH08` (Q200 to Q1000) | Fan Speed, Auto/Sleep Presets, PM2.5, Filter Life, Child Lock | Cloud REST | `⚠️ API Modeled` |
@@ -101,14 +102,27 @@ python -m qubopy --help
 
 ## Authentication & Account Guidelines
 
+`qubopy` supports two distinct authentication pathways provided by Qubo cloud services:
+
+### 1. Email and Password (Continuous Session with Refresh Tokens)
+* **Session Lifecycle**: Continuous. Qubo returns an `accessToken` along with a valid server-issued `refreshToken`.
+* **Automatic Renewal**: `qubopy` proactively refreshes the access token before expiration using `POST /auth/refresh`.
+* **Target Use Case**: Recommended for permanent Home Assistant integrations and continuous 24/7 cloud polling.
+
+### 2. Phone Number and SMS OTP (1-Hour Session / Provisioning Extractor)
+* **Session Lifecycle**: Exactly 1 hour (`exp: 3600s`). Qubo cloud endpoints do not issue a `refreshToken` over the phone verification route.
+* **Account Linkage & Multi-Account Selection**: A single phone number can have multiple profile accounts attached. `qubopy` detects multiple profiles and allows interactive selection or targeted selection via `--profile-index` or `--account-uuid`.
+* **Target Use Case**: Designed as a **local credential and provisioning extractor**:
+  * Extracting offline BLE smart lock keys via `qubopy export-ble-keys` for 100% local ESPHome/BLE control without cloud dependence.
+  * Exporting in-car Wi-Fi AP SSID and passwords via `qubopy dashcam-wifi` for direct dashcam connectivity.
+  * Initial device discovery and stream testing.
+* **Switching to Email**: Accounts originally created via mobile phone in the Qubo mobile app are marked with `accountType: "MOBILE"`. If you require automated 24/7 cloud polling in Home Assistant without hourly SMS re-authentication, register a separate email-based Qubo account.
+
 > [!IMPORTANT]
 > **Account Registration Restriction**: Qubo strictly restricts account authentication to the method used during registration.
 > - If you created your Qubo account using a **mobile phone number**, you must authenticate using SMS OTP (`login-phone`).
 > - If you created your Qubo account using an **email and password**, you must authenticate using email (`login`).
 > - Attempting to use email and password credentials on an account registered with a phone number will be rejected by the cloud.
-
-> [!NOTE]
-> **Account Linkage Model**: While an email address is strictly bound to a single account (1-to-1), a phone number can be linked to multiple accounts. `qubopy` automatically detects and unpacks multi-account responses during phone verification.
 
 > [!WARNING]
 > **Mobile App Session Revocation**: When you sign in via `qubopy`, the active session is visible in the official Qubo mobile app under **Account -> Logged In Devices** with the label `Qubopy` (or your custom `--device-name`).
@@ -301,26 +315,37 @@ async def export_lock_ble(lock: QuboLock):
 `qubopy` provides a command-line interface for authenticating, testing, and inspecting device parameters:
 
 ```bash
-# Authenticate using email and password (default label: Qubopy)
+# Authenticate using email and password (continuous session with refresh token)
 python -m qubopy login --email <email> --password <password>
 
 # Authenticate with a custom device label shown in the Qubo mobile app
 python -m qubopy login --email <email> --password <password> --device-name <device_label>
 
-# Authenticate using phone number and SMS OTP (interactive prompt)
+# Authenticate using phone number and SMS OTP (interactive prompt with profile selector)
 python -m qubopy login-phone --phone <phone_number> --isd +91
 
-# Verify SMS OTP in a separate step (if not completed interactively)
+# Verify SMS OTP in a separate step (select profile by index or account UUID)
 python -m qubopy verify-otp --otp <otp_code>
+python -m qubopy verify-otp --otp <otp_code> --profile-index 1
+python -m qubopy verify-otp --otp <otp_code> --account-uuid <user_uuid>
 
-# List all units and paired devices (displays Lock (Gateway) vs Lock (BLE Only))
+# List all units and paired devices (alias: 'devices')
+python -m qubopy devices
 python -m qubopy list-devices
+
+# Mint live Wowza RTSPS stream URL for cameras (can open in VLC or go2rtc)
+python -m qubopy stream
+python -m qubopy stream --device-id <camera_uuid> --quality high
+
+# Fetch in-car Wi-Fi AP credentials (SSID and WPA2 password) for dashcam
+python -m qubopy dashcam-wifi
+
+# Export offline BLE credentials (MAC, auth key, offline key) for smart locks
+python -m qubopy export-ble-keys
+python -m qubopy export-ble-keys --device-id <lock_uuid>
 
 # Cloud unlock smart lock via paired in-home gateway
 python -m qubopy unlock --device-id <lock_uuid>
-
-# Export local BLE credentials for smart locks (experimental)
-python -m qubopy export-ble-keys --device-id <device_uuid>
 ```
 
 ---
