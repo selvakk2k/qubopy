@@ -46,9 +46,10 @@ session.json
 *.sqlite3
 *.db
 
-# APK / XAPK archives
+# Archives
 *.apk
 *.xapk
+*.zip
 
 
 
