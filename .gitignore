@@ -25,3 +25,9 @@ htmlcov/
 *.swp
 *.swo
 .DS_Store
+
+# Internal Developer Handover & Sessions
+HANDOVER.md
+.qubopy_session.json
+.qubopy_otp_pending.json
+

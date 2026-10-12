@@ -27,6 +27,7 @@ An asynchronous Python client library and local Bluetooth Low Energy (BLE) crede
   - [6. Smart Door Locks - HLM / HLW Series](#6-smart-door-locks-hlm--hlw-series)
 - [Command Line Interface (CLI)](#command-line-interface-cli)
 - [IP Camera & Media Streaming Architecture](#ip-camera--media-streaming-architecture)
+- [Cloud MQTT Broker & Real-Time Telemetry](#cloud-mqtt-broker--real-time-telemetry)
 - [Local BLE Architecture for Smart Locks](#local-ble-architecture-for-smart-locks)
   - [GATT Services and Characteristics](#gatt-services-and-characteristics)
   - [Experimental ESPHome Configuration](#experimental-esphome-configuration)
@@ -327,6 +328,48 @@ Qubo security cameras (`HCP` / `HCO` series) and video doorbells (`HCD` series) 
 * **Session Exclusivity**: Streaming URLs minted by Qubo cloud are single-consumer sessions (each URL serves one active stream session).
 * **Local Network Streaming**: The mobile app does not rely on open LAN RTSP ports. Instead, it negotiates direct peer-to-peer (P2P) UDP connections encrypted with AES-128-GCM over RTP.
 * **Downstream Integration**: `qubopy` extracts device identifiers, unit IDs, live tokens, and streaming endpoints so that media engines (such as `go2rtc` and Home Assistant) can connect without third-party tools.
+
+---
+
+## Cloud MQTT Broker & Real-Time Telemetry
+
+In addition to REST-based control, the Qubo ecosystem operates a cloud MQTT broker for real-time telemetry streaming and sub-second push notifications.
+
+### 1. Broker Connection Parameters
+
+* **Host**: `mqtt.platform.quboworld.com`
+* **Port**: `8883`
+* **Protocol**: TLS / SSL (`ssl://`)
+* **Transport**: TCP over TLS with standard server certificate verification
+
+### 2. Dynamic Credential Provisioning
+
+The MQTT broker does not use static passwords. Clients provision dynamic MQTT credentials by calling the authenticated REST endpoint:
+
+```http
+GET /unit-entity-management/api/v1/sp/d10e4bfb0153496e8e8bb955f7ebe413/agent/device/mqtt/unit/{unit_uuid}/device/{device_uuid}
+```
+
+The response provides the dynamic broker credentials:
+
+```json
+{
+  "username": "<user_uuid>",
+  "password": "<dynamic_mqtt_session_secret>",
+  "clientId": "<client_or_device_uuid>",
+  "serverUrl": "ssl://mqtt.platform.quboworld.com:8883"
+}
+```
+
+### 3. Topic Hierarchy & Subscriptions
+
+Once authenticated over TLS, clients subscribe to specific event streams:
+
+| Stream Type | Topic Pattern | Description |
+| :--- | :--- | :--- |
+| **User Push Events** | `/users/{user_uuid}/events` | Real-time push events for doorbell presses, motion detection, and security alarms. |
+| **Device Telemetry** | `units/{unit_uuid}/devices/{device_uuid}/status` | Live attribute reports including plug power (W), air purifier PM2.5, and sensor metrics. |
+| **Command Channel** | `units/{unit_uuid}/devices/{device_uuid}/command` | Asynchronous command publication channel for cloud-relayed actuation. |
 
 ---
 
