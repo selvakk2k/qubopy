@@ -264,23 +264,20 @@ async def _cmd_login_phone(args: argparse.Namespace) -> int:
                     if choice.isdigit() and 0 <= int(choice) < len(profiles):
                         selected_idx = int(choice)
 
-                tokens = await auth.verify_phone_otp(
-                    phone,
-                    otp,
-                    isd_code=clean_isd,
-                    session_uuid=session_uuid,
-                    device_attribute=device_name,
+                tokens = auth.select_profile(
+                    profiles,
                     profile_index=selected_idx,
                 )
                 print("Phone authentication successful.")
                 print(f"User UUID: {tokens.user_uuid}")
-                _save_session(
-                    {
-                        "accessToken": tokens.access_token,
-                        "refreshToken": tokens.refresh_token,
-                        "uuid": tokens.user_uuid,
-                    }
-                )
+                session_dict = {
+                    "accessToken": tokens.access_token,
+                    "refreshToken": tokens.refresh_token,
+                    "uuid": tokens.user_uuid,
+                }
+                if selected_idx < len(profiles) and profiles[selected_idx].get("email"):
+                    session_dict["email"] = profiles[selected_idx]["email"]
+                _save_session(session_dict)
                 try:
                     SESSION_TEMP_FILE.unlink(missing_ok=True)
                 except Exception:
@@ -359,24 +356,21 @@ async def _cmd_verify_otp(args: argparse.Namespace) -> int:
             if choice.isdigit() and 0 <= int(choice) < len(profiles):
                 selected_idx = int(choice)
 
-        tokens = await auth.verify_phone_otp(
-            phone,
-            args.otp,
-            isd_code=clean_isd,
-            session_uuid=session_uuid,
-            device_attribute=device_name,
+        tokens = auth.select_profile(
+            profiles,
             profile_index=selected_idx,
             account_uuid=account_uuid,
         )
         print("Phone authentication successful.")
         print(f"User UUID: {tokens.user_uuid}")
-        _save_session(
-            {
-                "accessToken": tokens.access_token,
-                "refreshToken": tokens.refresh_token,
-                "uuid": tokens.user_uuid,
-            }
-        )
+        session_dict = {
+            "accessToken": tokens.access_token,
+            "refreshToken": tokens.refresh_token,
+            "uuid": tokens.user_uuid,
+        }
+        if selected_idx < len(profiles) and profiles[selected_idx].get("email"):
+            session_dict["email"] = profiles[selected_idx]["email"]
+        _save_session(session_dict)
         try:
             SESSION_TEMP_FILE.unlink(missing_ok=True)
         except Exception:

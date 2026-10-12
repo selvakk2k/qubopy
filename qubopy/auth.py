@@ -301,29 +301,13 @@ class QuboAuth:
         except json.JSONDecodeError as err:
             raise QuboAuthError(f"Invalid JSON returned by server: {err}") from err
 
-    async def verify_phone_otp(
+    def select_profile(
         self,
-        phone: str,
-        otp: str,
-        isd_code: str = "+91",
-        session_uuid: str | None = None,
-        device_attribute: str = DEFAULT_DEVICE_ATTRIBUTE,
+        profiles: list[dict[str, Any]],
         profile_index: int = 0,
         account_uuid: str | None = None,
     ) -> TokenPayload:
-        """Verify received SMS OTP and obtain session tokens.
-
-        If multiple account profiles are linked to the phone number, specify
-        either `profile_index` (default 0) or `account_uuid` to select the account.
-        """
-        profiles = await self.get_phone_otp_profiles(
-            phone=phone,
-            otp=otp,
-            isd_code=isd_code,
-            session_uuid=session_uuid,
-            device_attribute=device_attribute,
-        )
-
+        """Adopt session tokens from a selected profile returned by OTP verification."""
         if not profiles:
             raise QuboAuthError("No account profiles returned in OTP verification response")
 
@@ -364,6 +348,34 @@ class QuboAuth:
             expires_at=expires_at,
         )
         return self._tokens
+
+    async def verify_phone_otp(
+        self,
+        phone: str,
+        otp: str,
+        isd_code: str = "+91",
+        session_uuid: str | None = None,
+        device_attribute: str = DEFAULT_DEVICE_ATTRIBUTE,
+        profile_index: int = 0,
+        account_uuid: str | None = None,
+    ) -> TokenPayload:
+        """Verify received SMS OTP and obtain session tokens.
+
+        If multiple account profiles are linked to the phone number, specify
+        either `profile_index` (default 0) or `account_uuid` to select the account.
+        """
+        profiles = await self.get_phone_otp_profiles(
+            phone=phone,
+            otp=otp,
+            isd_code=isd_code,
+            session_uuid=session_uuid,
+            device_attribute=device_attribute,
+        )
+        return self.select_profile(
+            profiles,
+            profile_index=profile_index,
+            account_uuid=account_uuid,
+        )
 
     async def refresh_session(self, failed_token: str | None = None) -> TokenPayload:
         """Renew the JWT access token using the stored refresh token."""

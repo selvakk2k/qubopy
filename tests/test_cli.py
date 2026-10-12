@@ -34,18 +34,60 @@ async def test_verify_otp_without_pending_file_no_unbound_error(tmp_path):
         mock_auth.get_phone_otp_profiles = AsyncMock(
             return_value=[{"name": "User", "uuid": "u-1"}]
         )
-        mock_auth.verify_phone_otp = AsyncMock(
-            return_value=TokenPayload(
-                accessToken="tok",
-                refreshToken=None,
-                uuid="u-1",
-            )
+        mock_auth.select_profile.return_value = TokenPayload(
+            accessToken="tok",
+            refreshToken=None,
+            uuid="u-1",
         )
         mock_auth.close = AsyncMock()
 
         with patch("qubopy.cli._save_session"):
             code = await _cmd_verify_otp(args)
             assert code == 0
+
+
+@pytest.mark.asyncio
+async def test_cmd_login_phone_single_verify_call(monkeypatch):
+    """Ensure interactive phone login verifies OTP exactly once across multiple profiles."""
+    from qubopy.cli import _cmd_login_phone
+
+    args = argparse.Namespace(
+        phone="9876543210",
+        isd="+91",
+        device_name="TestDevice",
+    )
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+    inputs = iter(["123456", "1"])
+    monkeypatch.setattr("builtins.input", lambda prompt="": next(inputs))
+
+    with patch("qubopy.cli.QuboAuth") as mock_auth_cls:
+        mock_auth = mock_auth_cls.return_value
+        mock_auth.request_phone_otp = AsyncMock(return_value={"uuid": "sess-123"})
+        mock_auth.get_phone_otp_profiles = AsyncMock(
+            return_value=[
+                {"name": "Profile0", "uuid": "u-0", "email": "p0@test.com"},
+                {"name": "Profile1", "uuid": "u-1", "email": "p1@test.com"},
+            ]
+        )
+        mock_auth.select_profile.return_value = TokenPayload(
+            accessToken="tok-1",
+            refreshToken=None,
+            uuid="u-1",
+        )
+        mock_auth.close = AsyncMock()
+
+        with patch("qubopy.cli._save_session") as mock_save:
+            code = await _cmd_login_phone(args)
+            assert code == 0
+            mock_auth.get_phone_otp_profiles.assert_awaited_once()
+            mock_auth.select_profile.assert_called_once()
+            assert mock_auth.select_profile.call_args[1]["profile_index"] == 1
+            mock_save.assert_called_once_with({
+                "accessToken": "tok-1",
+                "refreshToken": None,
+                "uuid": "u-1",
+                "email": "p1@test.com",
+            })
 
 
 def test_models_repr_conceals_secrets():

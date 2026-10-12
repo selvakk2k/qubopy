@@ -414,3 +414,41 @@ async def test_refresh_session_missing_access_token_preserves_tokens():
     await auth.close()
 
 
+def test_select_profile_by_index():
+    """Verify select_profile correctly adopts tokens and user UUID by index."""
+    auth = QuboAuth()
+    profiles = [
+        {"name": "User0", "uuid": "u-0", "accessToken": "tok-0"},
+        {"name": "User1", "uuid": "u-1", "accessToken": "tok-1"},
+    ]
+    tok = auth.select_profile(profiles, profile_index=1)
+    assert tok.access_token == "tok-1"
+    assert tok.user_uuid == "u-1"
+    assert auth.tokens.access_token == "tok-1"
+
+
+def test_select_profile_by_uuid():
+    """Verify select_profile correctly selects by account UUID."""
+    auth = QuboAuth()
+    profiles = [
+        {"name": "User0", "uuid": "u-0", "accessToken": "tok-0"},
+        {"name": "User1", "uuid": "u-1", "accessToken": "tok-1"},
+    ]
+    tok = auth.select_profile(profiles, account_uuid="u-0")
+    assert tok.access_token == "tok-0"
+    assert tok.user_uuid == "u-0"
+
+
+def test_select_profile_invalid():
+    """Verify select_profile raises error on empty or out of range index."""
+    auth = QuboAuth()
+    with pytest.raises(QuboAuthError, match="No account profiles returned"):
+        auth.select_profile([])
+
+    with pytest.raises(QuboAuthError, match="out of range"):
+        auth.select_profile([{"uuid": "u-1", "accessToken": "tok"}], profile_index=5)
+
+    with pytest.raises(QuboAuthError, match="Account UUID 'unknown' not found"):
+        auth.select_profile([{"uuid": "u-1", "accessToken": "tok"}], account_uuid="unknown")
+
+
