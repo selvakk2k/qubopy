@@ -1,10 +1,32 @@
 """Shared pytest fixtures and mock utilities."""
 
+import asyncio
+
 import pytest
 
 from qubopy.auth import QuboAuth
 from qubopy.client import QuboClient
 from qubopy.models import DeviceModelInfo
+
+
+class MockClientResponse:
+    """Mock aiohttp ClientResponse context manager."""
+
+    def __init__(self, status: int, text_data: str, delay: float = 0.0) -> None:
+        self.status = status
+        self._text_data = text_data
+        self.delay = delay
+
+    async def __aenter__(self):
+        if self.delay > 0:
+            await asyncio.sleep(self.delay)
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        pass
+
+    async def text(self) -> str:
+        return self._text_data
 
 
 @pytest.fixture

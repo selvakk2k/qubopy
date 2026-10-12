@@ -8,27 +8,7 @@ import pytest
 
 from qubopy.auth import QuboAuth
 from qubopy.exceptions import QuboAuthError
-
-
-class MockClientResponse:
-    """Mock aiohttp ClientResponse context manager."""
-
-    def __init__(self, status: int, text_data: str, delay: float = 0.0) -> None:
-        self.status = status
-        self._text_data = text_data
-        self.delay = delay
-
-    async def __aenter__(self):
-        if self.delay > 0:
-            import asyncio
-            await asyncio.sleep(self.delay)
-        return self
-
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        pass
-
-    async def text(self) -> str:
-        return self._text_data
+from tests.conftest import MockClientResponse
 
 
 @pytest.mark.asyncio

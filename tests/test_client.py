@@ -11,7 +11,7 @@ from qubopy.auth import QuboAuth
 from qubopy.client import QuboClient
 from qubopy.devices import QuboLock, QuboPlug
 from qubopy.exceptions import QuboAuthError, QuboCommandError
-from tests.test_auth import MockClientResponse
+from tests.conftest import MockClientResponse
 
 
 @pytest.mark.asyncio
