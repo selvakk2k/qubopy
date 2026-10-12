@@ -1,7 +1,7 @@
 # Qubo Python Client Library & BLE Enabler (`qubopy`)
 
-[![PyPI version](https://badge.fury.io/py/qubopy.svg)](https://badge.fury.io/py/qubopy)
-[![Python Version](https://img.shields.io/pypi/pyversions/qubopy.svg)](https://pypi.org/project/qubopy/)
+[![PyPI version](https://img.shields.io/pypi/v/qubopy?style=flat-square)](https://pypi.org/project/qubopy/)
+[![Python Version](https://img.shields.io/pypi/pyversions/qubopy?style=flat-square)](https://pypi.org/project/qubopy/)
 [![Release](https://img.shields.io/github/v/release/selvakk2k/qubopy?style=flat-square)](https://github.com/selvakk2k/qubopy/releases)
 [![AI-Assisted](https://img.shields.io/badge/AI%20Assisted-Antigravity%20%7C%20Claude-blueviolet?style=flat-square&logo=google)](https://github.com/selvakk2k)
 [![AI Attribution](https://img.shields.io/badge/AI%20Attribution-AIA%20PAI%20Nc%20Hin-orange?style=flat-square)](https://aiattribution.github.io/interpret-attribution)
@@ -401,17 +401,17 @@ qubopy tokens
 Output:
 ```text
 === Qubo Active Session Tokens ===
-User UUID     : 1d144e18-378f-42ba-b623-625d63ec3fb3
+User UUID     : 00000000-0000-0000-0000-000000000000
 Session Type  : Email (Continuous / Refreshable)
 Token Status  : Active (59m 44s remaining)
 Expires At    : 2026-10-12 08:25:50 UTC
 Refresh Token : Present
 Session File  : /home/user/.qubopy_session.json
 -----------------------------------
-Access Token  : eyJhbGciOiJIUzI...BBECV4AlKA
-Refresh Token : eyJhbGciOi...3SOP4
+Access Token  : eyJhbGciOiJIUzI...REDACTED
+Refresh Token : eyJhbGciOi...REDACTED
 
-Tip: Pass '--show-secrets' for unmasked tokens, or '--json' for full JSON export.
+Tip: Pass '--show-secrets' for unmasked tokens, or '--json' for full JSON export (masked by default).
 ```
 
 #### 2. Export Raw Tokens for External Tools
@@ -439,26 +439,31 @@ Get-Content ~\.qubopy_session.json
 #### 4. Reusing Stored Sessions in Python
 Automation scripts do not need to re-authenticate on every execution. You can initialize `QuboAuth` and `QuboClient` directly using the stored session file:
 ```python
+import asyncio
 import json
 from pathlib import Path
 from qubopy import QuboAuth, QuboClient
 
-# Read saved credentials
-session_path = Path.home() / ".qubopy_session.json"
-session_data = json.loads(session_path.read_text(encoding="utf-8"))
+async def main() -> None:
+    # Read saved credentials
+    session_path = Path.home() / ".qubopy_session.json"
+    session_data = json.loads(session_path.read_text(encoding="utf-8"))
 
-# Initialize auth with saved tokens
-auth = QuboAuth()
-auth.set_tokens(
-    access_token=session_data["accessToken"],
-    refresh_token=session_data.get("refreshToken"),
-    user_uuid=session_data.get("uuid", ""),
-)
+    # Initialize auth with saved tokens
+    auth = QuboAuth()
+    auth.set_tokens(
+        access_token=session_data["accessToken"],
+        refresh_token=session_data.get("refreshToken"),
+        user_uuid=session_data.get("uuid", ""),
+    )
 
-# Initialize client without re-authenticating
-async with QuboClient(auth) as client:
-    devices = await client.get_all_devices()
-    print(f"Discovered {len(devices)} device(s)")
+    # Initialize client without re-authenticating
+    async with QuboClient(auth) as client:
+        devices = await client.get_all_devices()
+        print(f"Discovered {len(devices)} device(s)")
+
+if __name__ == "__main__":
+    asyncio.run(main())
 ```
 
 ---
