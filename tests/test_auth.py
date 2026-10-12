@@ -130,7 +130,7 @@ async def test_phone_otp_multi_account_list():
     mock_resp_verify = MockClientResponse(200, json.dumps(multi_account_payload))
     with patch("aiohttp.ClientSession.post", return_value=mock_resp_verify):
         tokens = await auth.verify_phone_otp(
-            "9245419833", "865321", isd_code="+91", session_uuid="session-multi"
+            "9876543210", "865321", isd_code="+91", session_uuid="session-multi"
         )
         assert tokens.user_uuid == "user-111"
         assert tokens.access_token == multi_account_payload[0]["token"]

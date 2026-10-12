@@ -30,4 +30,20 @@ htmlcov/
 HANDOVER.md
 .qubopy_session.json
 .qubopy_otp_pending.json
+session.json
+.session.json
+*.session
+*.token
+
+# Local environment variables & secrets
+.env
+.env.*
+*.env
+
+# Logs and runtime dumps
+*.log
+*.dump
+*.sqlite3
+*.db
+
 

@@ -265,9 +265,13 @@ Actuates the lock via an in-home Qubo gateway bridge (such as a Video Doorbell P
 from qubopy.devices import QuboLock
 
 async def unlock_door(lock: QuboLock):
-    # Unlocks via paired in-home gateway bridge
-    result = await lock.unlock()
-    print(f"Unlock result: {result}")
+    # Check if an in-home RF/BLE gateway bridge is active
+    if lock.is_gateway_accessible:
+        print(f"Paired gateway ID: {lock.gateway_id}")
+        result = await lock.unlock()
+        print(f"Unlock result: {result}")
+    else:
+        print("Lock is in standalone Bluetooth mode; use local BLE key export.")
 ```
 
 #### Method B: Local BLE Offline Credentials (`⚠️ Experimental`)
@@ -309,7 +313,7 @@ python -m qubopy login-phone --phone <phone_number> --isd +91
 # Verify SMS OTP in a separate step (if not completed interactively)
 python -m qubopy verify-otp --otp <otp_code>
 
-# List all units and paired devices
+# List all units and paired devices (displays Lock (Gateway) vs Lock (BLE Only))
 python -m qubopy list-devices
 
 # Cloud unlock smart lock via paired in-home gateway
