@@ -5,7 +5,7 @@ from unittest.mock import patch
 import pytest
 
 from qubopy.client import QuboClient
-from qubopy.devices import QuboPlug
+from qubopy.devices import QuboLock, QuboPlug
 from qubopy.exceptions import QuboAuthError, QuboCommandError
 from tests.test_auth import MockClientResponse
 
@@ -140,4 +140,41 @@ async def test_get_units_and_devices_hierarchy(sample_client):
         assert cam.model == "HCP01"
 
     await sample_client.close()
+
+
+@pytest.mark.asyncio
+async def test_lock_gateway_auto_association(sample_client):
+    """Verify sibling gateway device is auto-associated with a smart lock."""
+    units_payload = [{"unitUUID": "unit-home-1", "name": "My Home"}]
+    devices_payload = [
+        {
+            "deviceUUID": "cam-100",
+            "deviceName": "Living Room Cam",
+            "deviceModel": "HCP01",
+            "deviceType": "Camera",
+            "unitUUID": "unit-home-1",
+        },
+        {
+            "deviceUUID": "lock-200",
+            "deviceName": "Main Door Lock",
+            "deviceModel": "HLM01",
+            "deviceType": "SmartDoorLock",
+            "unitUUID": "unit-home-1",
+        },
+    ]
+
+    def mock_request(method, url, **kwargs):
+        if "/devices" in url:
+            return MockClientResponse(200, json.dumps(devices_payload))
+        return MockClientResponse(200, json.dumps(units_payload))
+
+    with patch("aiohttp.ClientSession.request", side_effect=mock_request):
+        devices = await sample_client.get_all_devices()
+        assert len(devices) == 2
+        lock = next(d for d in devices if isinstance(d, QuboLock))
+        assert lock.gateway_id == "cam-100"
+        assert lock.is_gateway_accessible is True
+
+    await sample_client.close()
+
 

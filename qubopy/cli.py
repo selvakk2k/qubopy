@@ -231,7 +231,10 @@ async def _cmd_list_devices(args: argparse.Namespace) -> int:
             print("-" * len(header))
             for d in devices:
                 online_str = "Yes" if d.is_online else "No"
-                print(f"{d.name:<25} {d.model:<12} {d.__class__.__name__:<18} {online_str:<8} {d.device_id:<36}")
+                type_str = d.__class__.__name__
+                if isinstance(d, QuboLock):
+                    type_str = f"Lock (Gateway)" if d.is_gateway_accessible else "Lock (BLE Only)"
+                print(f"{d.name:<25} {d.model:<12} {type_str:<18} {online_str:<8} {d.device_id:<36}")
             print()
             return 0
     except QuboError as err:

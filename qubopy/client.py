@@ -19,7 +19,7 @@ from qubopy.const import (
     PATH_UNITS,
     PATH_UPDATE_SHADOW_ATTRIBUTE,
 )
-from qubopy.devices import QuboDevice, create_device
+from qubopy.devices import QuboDevice, create_device, is_gateway_device
 from qubopy.exceptions import (
     QuboAuthError,
     QuboCommandError,
@@ -297,6 +297,16 @@ class QuboClient:
         for unit in units:
             unit_uuid = unit.get("unitUUID") or unit.get("uuid") or unit.get("unitId") or ""
             raw_devs = await self.get_devices_for_unit(unit_uuid) if unit_uuid else []
+
+            # 1. Identify any active gateway devices in this unit
+            unit_gateways: list[str] = []
+            for d in raw_devs:
+                if isinstance(d, dict) and is_gateway_device(d):
+                    gw_id = d.get("deviceUUID") or d.get("deviceId") or d.get("uuid")
+                    if gw_id:
+                        unit_gateways.append(str(gw_id))
+
+            # 2. Instantiate devices, auto-associating sibling gateway to locks
             for d in raw_devs:
                 if not isinstance(d, dict):
                     continue
@@ -304,6 +314,17 @@ class QuboClient:
                 if not dev_uuid or dev_uuid in seen_uuids:
                     continue
                 seen_uuids.add(dev_uuid)
+
+                # Copy extraData and bind gateway if lock lacks one
+                extra = dict(d.get("extraData", d))
+                dev_type_str = (d.get("deviceType") or d.get("type") or "").upper()
+                dev_model_str = (d.get("deviceModel") or d.get("model") or "").upper()
+                is_lock = "LOCK" in dev_type_str or any(
+                    dev_model_str.startswith(p) for p in ("HLM", "HLW", "HLR")
+                )
+                if is_lock and unit_gateways:
+                    if not extra.get("gatewayUUID") and not extra.get("gatewayId"):
+                        extra["gatewayUUID"] = unit_gateways[0]
 
                 # Parse shadow if embedded in device descriptor
                 shadow_obj = None
@@ -329,7 +350,7 @@ class QuboClient:
                     unitUUID=unit_uuid or d.get("unitUUID", ""),
                     entityUUID=d.get("entityUUID", d.get("entityId", "")),
                     isOnline=bool(d.get("isOnline", d.get("online", True))),
-                    extraData=d.get("extraData", d),
+                    extraData=extra,
                 )
                 devices.append(create_device(dev_info, self, shadow_obj))
 

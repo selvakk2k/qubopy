@@ -128,3 +128,45 @@ def test_sensors(sample_client):
 
     assert sensor.is_gas_alarm is True
     assert sensor.battery_percent == 92
+
+
+@pytest.mark.asyncio
+async def test_lock_gateway_accessibility_and_unlock(sample_client):
+    """Test QuboLock gateway detection and unlock validation."""
+    from qubopy.devices import QuboLock
+    from qubopy.exceptions import QuboCommandError
+
+    # 1. Lock with paired gateway
+    info_gw = DeviceModelInfo(
+        uuid="lock-01",
+        deviceId="lock-01",
+        name="Front Door Lock",
+        model="HLM01",
+        type="SmartDoorLock",
+        extraData={"gatewayUUID": "cam-gw-01"},
+    )
+    lock_gw = QuboLock(info_gw, sample_client)
+    assert lock_gw.gateway_id == "cam-gw-01"
+    assert lock_gw.is_gateway_accessible is True
+
+    # Mock send command
+    sample_client.unlock_lock_via_gateway = AsyncMock(return_value={"status": "SUCCESS"})
+    res = await lock_gw.unlock()
+    assert res["status"] == "SUCCESS"
+
+    # 2. Lock without paired gateway (standalone BLE only)
+    info_ble = DeviceModelInfo(
+        uuid="lock-02",
+        deviceId="lock-02",
+        name="Bedroom Lock",
+        model="HLM02",
+        type="SmartDoorLock",
+    )
+    lock_ble = QuboLock(info_ble, sample_client)
+    assert lock_ble.gateway_id is None
+    assert lock_ble.is_gateway_accessible is False
+
+    with pytest.raises(QuboCommandError) as exc_info:
+        await lock_ble.unlock()
+    assert "standalone Bluetooth mode" in str(exc_info.value)
+

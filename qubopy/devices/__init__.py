@@ -32,7 +32,30 @@ __all__ = [
     "QuboCamera",
     "QuboSensor",
     "create_device",
+    "is_gateway_device",
 ]
+
+
+def is_gateway_device(device_data: dict | DeviceModelInfo) -> bool:
+    """Return True if device can act as an in-home RF/BLE gateway for locks."""
+    if isinstance(device_data, DeviceModelInfo):
+        model = device_data.model or ""
+        dev_type = device_data.device_type or ""
+    elif isinstance(device_data, dict):
+        model = device_data.get("deviceModel") or device_data.get("model") or ""
+        dev_type = device_data.get("deviceType") or device_data.get("type") or ""
+    else:
+        return False
+
+    m_upper = model.upper()
+    t_lower = dev_type.lower()
+
+    if any(m_upper.startswith(p) for p in PREFIX_DOORBELL + PREFIX_CAMERA):
+        return True
+    if any(k in t_lower for k in ("doorbell", "camera", "cam", "gateway", "hhl")):
+        return True
+    return False
+
 
 
 def create_device(

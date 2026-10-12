@@ -19,6 +19,12 @@ class QuboLock(QuboDevice):
         )
 
     @property
+    def is_gateway_accessible(self) -> bool:
+        """Return True if an in-home RF/BLE gateway is paired for cloud actuation."""
+        return bool(self.gateway_id)
+
+
+    @property
     def is_locked(self) -> bool | None:
         """Return True if door is locked, False if unlocked, None if unknown."""
         rep = self.reported_state
@@ -117,8 +123,10 @@ class QuboLock(QuboDevice):
         target_gw = gateway_uuid or self.gateway_id
         if not target_gw:
             raise QuboCommandError(
-                f"Cannot unlock {self.device_id} ({self.name}): no paired gateway device "
-                "found in metadata. Provide an explicit gateway_uuid."
+                f"Cannot unlock {self.device_id} ({self.name}): no in-home gateway "
+                f"(Video Doorbell Pro or Smart Camera) was found in unit '{self.unit_id or 'default'}'. "
+                "This lock is operating in standalone Bluetooth mode; use local BLE key export "
+                "(get_ble_lock_keys()) or provide an explicit gateway_uuid."
             )
         return await self.client.unlock_lock_via_gateway(
             unit_uuid=self.unit_id,

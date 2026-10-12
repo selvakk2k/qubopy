@@ -138,6 +138,6 @@ async def test_unlock_missing_gateway_raises_error(sample_client):
     )
     lock = QuboLock(info, sample_client)
 
-    with pytest.raises(QuboCommandError, match="no paired gateway device found"):
+    with pytest.raises(QuboCommandError, match="no in-home gateway"):
         await lock.unlock()
 
