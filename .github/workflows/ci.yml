@@ -34,3 +34,13 @@ jobs:
       - name: Run test suite with pytest
         run: |
           python -m pytest
+
+      - name: Verify sdist package build and test suite
+        run: |
+          pip install build
+          python -m build --sdist
+          mkdir -p /tmp/sdist-test
+          tar -xzf dist/qubopy-*.tar.gz -C /tmp/sdist-test
+          cd /tmp/sdist-test/qubopy-*
+          python -m pip install -e .[dev]
+          python -m pytest

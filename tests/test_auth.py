@@ -452,3 +452,20 @@ def test_select_profile_invalid():
         auth.select_profile([{"uuid": "u-1", "accessToken": "tok"}], account_uuid="unknown")
 
 
+def test_find_profile_index():
+    """Verify find_profile_index accurately resolves profile indices."""
+    profiles = [
+        {"name": "Profile0", "uuid": "u-0", "email": "p0@test.com"},
+        {"name": "Profile1", "uuid": "u-1", "email": "p1@test.com"},
+    ]
+    assert QuboAuth.find_profile_index(profiles, profile_index=0) == 0
+    assert QuboAuth.find_profile_index(profiles, profile_index=1) == 1
+    assert QuboAuth.find_profile_index(profiles, account_uuid="u-1") == 1
+    assert QuboAuth.find_profile_index(profiles, account_uuid="u-0") == 0
+
+    with pytest.raises(QuboAuthError, match="Account UUID 'unknown' not found"):
+        QuboAuth.find_profile_index(profiles, account_uuid="unknown")
+    with pytest.raises(QuboAuthError, match="out of range"):
+        QuboAuth.find_profile_index(profiles, profile_index=5)
+
+

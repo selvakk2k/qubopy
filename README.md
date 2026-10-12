@@ -27,6 +27,7 @@ An asynchronous Python client library and local Bluetooth Low Energy (BLE) crede
   - [6. Dashcams - HCA Series (Hardware Verified)](#6-dashcams-hca-series--hardware-verified)
   - [7. Smart Door Locks - HLM / HLW Series](#7-smart-door-locks-hlm--hlw-series)
 - [Command Line Interface (CLI)](#command-line-interface-cli)
+  - [Session & Token Management](#session--token-management)
 - [IP Camera & Media Streaming Architecture](#ip-camera--media-streaming-architecture)
 - [Cloud MQTT Broker & Real-Time Telemetry](#cloud-mqtt-broker--real-time-telemetry)
 - [Local BLE Architecture for Smart Locks](#local-ble-architecture-for-smart-locks)
@@ -133,7 +134,7 @@ python -m qubopy --help
 > Tapping **[Logout]** next to this entry in the mobile app immediately revokes the session on Qubo servers, requiring you to re-authenticate.
 
 > [!NOTE]
-> **Operating System File Permissions**: On Linux and macOS, session cache files (`~/.qubopy_session.json`, `~/.qubopy_otp_pending.json`) and device identifiers are created with POSIX `0o600` mode (read/write by owner only). Because Windows NTFS does not enforce POSIX permission bits, Windows users should ensure these files remain within their private user profile directory (`%USERPROFILE%`).
+> **Operating System File Permissions**: On Linux and macOS, session cache files (`~/.qubopy_session.json`, `~/.qubopy_otp_pending.json`) and device identifiers are created with POSIX `0o600` mode (read/write by owner only). The session cache stores active authentication tokens and the associated account email address. Because Windows NTFS does not enforce POSIX permission bits, Windows users should ensure these files remain within their private user profile directory (`%USERPROFILE%`).
 
 ---
 
@@ -345,11 +346,14 @@ async def export_lock_ble(lock: QuboLock):
 `qubopy` provides a command-line interface for authenticating, testing, and inspecting device parameters:
 
 ```bash
-# Authenticate using email and password (continuous session with refresh token)
+# Authenticate using email and password (recommended: prompted interactively or set QUBO_PASSWORD)
+python -m qubopy login --email <email>
+
+# Authenticate with inline password (caution: leaks to shell history; not recommended on shared machines)
 python -m qubopy login --email <email> --password <password>
 
 # Authenticate with a custom device label shown in the Qubo mobile app
-python -m qubopy login --email <email> --password <password> --device-name <device_label>
+python -m qubopy login --email <email> --device-name <device_label>
 
 # Authenticate using phone number and SMS OTP (interactive prompt with profile selector)
 python -m qubopy login-phone --phone <phone_number> --isd +91
@@ -381,6 +385,80 @@ python -m qubopy export-ble-keys --device-id <lock_uuid>
 
 # Cloud unlock smart lock via paired in-home gateway
 python -m qubopy unlock --device-id <lock_uuid>
+```
+
+### Session & Token Management
+
+After authenticating via `login` or `login-phone`, `qubopy` securely saves active session credentials to:
+* **Windows**: `%USERPROFILE%\.qubopy_session.json`
+* **Linux / macOS**: `~/.qubopy_session.json`
+
+#### 1. Inspect Active Session State
+Run `qubopy tokens` (or alias `qubopy session`) to view session type, account UUID, validity duration, and remaining minutes:
+```bash
+qubopy tokens
+```
+Output:
+```text
+=== Qubo Active Session Tokens ===
+User UUID     : 1d144e18-378f-42ba-b623-625d63ec3fb3
+Session Type  : Email (Continuous / Refreshable)
+Token Status  : Active (59m 44s remaining)
+Expires At    : 2026-10-12 08:25:50 UTC
+Refresh Token : Present
+Session File  : /home/user/.qubopy_session.json
+-----------------------------------
+Access Token  : eyJhbGciOiJIUzI...BBECV4AlKA
+Refresh Token : eyJhbGciOi...3SOP4
+
+Tip: Pass '--show-secrets' for unmasked tokens, or '--json' for full JSON export.
+```
+
+#### 2. Export Raw Tokens for External Tools
+To display complete unmasked tokens:
+```bash
+qubopy tokens --show-secrets
+```
+
+To export the raw session dictionary as clean JSON (tokens are masked by default unless `--show-secrets` is also passed):
+```bash
+qubopy tokens --json
+qubopy tokens --json --show-secrets
+```
+
+#### 3. Direct Filesystem Access
+You can also inspect or copy the raw JSON session file directly from the terminal:
+```bash
+# On Linux and macOS
+cat ~/.qubopy_session.json
+
+# On Windows (PowerShell)
+Get-Content ~\.qubopy_session.json
+```
+
+#### 4. Reusing Stored Sessions in Python
+Automation scripts do not need to re-authenticate on every execution. You can initialize `QuboAuth` and `QuboClient` directly using the stored session file:
+```python
+import json
+from pathlib import Path
+from qubopy import QuboAuth, QuboClient
+
+# Read saved credentials
+session_path = Path.home() / ".qubopy_session.json"
+session_data = json.loads(session_path.read_text(encoding="utf-8"))
+
+# Initialize auth with saved tokens
+auth = QuboAuth()
+auth.set_tokens(
+    access_token=session_data["accessToken"],
+    refresh_token=session_data.get("refreshToken"),
+    user_uuid=session_data.get("uuid", ""),
+)
+
+# Initialize client without re-authenticating
+async with QuboClient(auth) as client:
+    devices = await client.get_all_devices()
+    print(f"Discovered {len(devices)} device(s)")
 ```
 
 ---

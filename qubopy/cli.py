@@ -54,6 +54,18 @@ def _load_session() -> dict[str, Any] | None:
         return None
 
 
+def _mask_token(
+    token: str | None, prefix_len: int = 15, suffix_len: int = 10
+) -> str | None:
+    """Mask sensitive token string while preserving prefix and suffix hints."""
+    if not token:
+        return None
+    s = str(token)
+    if len(s) > (prefix_len + suffix_len):
+        return f"{s[:prefix_len]}...{s[-suffix_len:]}"
+    return s
+
+
 def _cmd_tokens(args: argparse.Namespace) -> int:
     session = _load_session()
     if not session or not session.get("accessToken"):
@@ -64,8 +76,18 @@ def _cmd_tokens(args: argparse.Namespace) -> int:
         )
         return 1
 
+    show_secrets = getattr(args, "show_secrets", False)
+
     if getattr(args, "json", False):
-        print(json.dumps(session, indent=2))
+        output_payload = dict(session)
+        if not show_secrets:
+            if output_payload.get("accessToken"):
+                output_payload["accessToken"] = _mask_token(output_payload["accessToken"])
+            if output_payload.get("refreshToken"):
+                output_payload["refreshToken"] = _mask_token(
+                    output_payload["refreshToken"], prefix_len=10, suffix_len=5
+                )
+        print(json.dumps(output_payload, indent=2))
         return 0
 
     access_token = str(session.get("accessToken", ""))
@@ -112,26 +134,22 @@ def _cmd_tokens(args: argparse.Namespace) -> int:
     print(f"Session File  : {TOKEN_FILE}")
     print("-" * 35)
 
-    if getattr(args, "show_secrets", False):
+    if show_secrets:
         print(f"Access Token  :\n{access_token}\n")
         if refresh_token:
             print(f"Refresh Token :\n{refresh_token}\n")
     else:
-        masked_access = (
-            f"{access_token[:15]}...{access_token[-10:]}"
-            if len(access_token) > 25
-            else access_token
-        )
+        masked_access = _mask_token(access_token) or access_token
         print(f"Access Token  : {masked_access}")
         if refresh_token:
-            r_str = str(refresh_token)
             masked_refresh = (
-                f"{r_str[:10]}...{r_str[-5:]}" if len(r_str) > 15 else r_str
+                _mask_token(str(refresh_token), prefix_len=10, suffix_len=5)
+                or str(refresh_token)
             )
             print(f"Refresh Token : {masked_refresh}")
         print(
             "\nTip: Pass '--show-secrets' for unmasked tokens, "
-            "or '--json' for full JSON export."
+            "or '--json' for full JSON export (masked by default)."
         )
 
     return 0
@@ -264,9 +282,10 @@ async def _cmd_login_phone(args: argparse.Namespace) -> int:
                     if choice.isdigit() and 0 <= int(choice) < len(profiles):
                         selected_idx = int(choice)
 
+                chosen_idx = auth.find_profile_index(profiles, profile_index=selected_idx)
                 tokens = auth.select_profile(
                     profiles,
-                    profile_index=selected_idx,
+                    profile_index=chosen_idx,
                 )
                 print("Phone authentication successful.")
                 print(f"User UUID: {tokens.user_uuid}")
@@ -275,8 +294,12 @@ async def _cmd_login_phone(args: argparse.Namespace) -> int:
                     "refreshToken": tokens.refresh_token,
                     "uuid": tokens.user_uuid,
                 }
-                if selected_idx < len(profiles) and profiles[selected_idx].get("email"):
-                    session_dict["email"] = profiles[selected_idx]["email"]
+                if (
+                    isinstance(chosen_idx, int)
+                    and 0 <= chosen_idx < len(profiles)
+                    and profiles[chosen_idx].get("email")
+                ):
+                    session_dict["email"] = profiles[chosen_idx]["email"]
                 _save_session(session_dict)
                 try:
                     SESSION_TEMP_FILE.unlink(missing_ok=True)
@@ -356,10 +379,12 @@ async def _cmd_verify_otp(args: argparse.Namespace) -> int:
             if choice.isdigit() and 0 <= int(choice) < len(profiles):
                 selected_idx = int(choice)
 
+        chosen_idx = auth.find_profile_index(
+            profiles, profile_index=selected_idx, account_uuid=account_uuid
+        )
         tokens = auth.select_profile(
             profiles,
-            profile_index=selected_idx,
-            account_uuid=account_uuid,
+            profile_index=chosen_idx,
         )
         print("Phone authentication successful.")
         print(f"User UUID: {tokens.user_uuid}")
@@ -368,8 +393,12 @@ async def _cmd_verify_otp(args: argparse.Namespace) -> int:
             "refreshToken": tokens.refresh_token,
             "uuid": tokens.user_uuid,
         }
-        if selected_idx < len(profiles) and profiles[selected_idx].get("email"):
-            session_dict["email"] = profiles[selected_idx]["email"]
+        if (
+            isinstance(chosen_idx, int)
+            and 0 <= chosen_idx < len(profiles)
+            and profiles[chosen_idx].get("email")
+        ):
+            session_dict["email"] = profiles[chosen_idx]["email"]
         _save_session(session_dict)
         try:
             SESSION_TEMP_FILE.unlink(missing_ok=True)
@@ -710,12 +739,12 @@ def main() -> None:
     p_tokens.add_argument(
         "--json",
         action="store_true",
-        help="Output raw session JSON payload",
+        help="Output session JSON payload (tokens masked unless --show-secrets is passed)",
     )
     p_tokens.add_argument(
         "--show-secrets",
         action="store_true",
-        help="Print complete unmasked tokens to stdout",
+        help="Print complete unmasked tokens to stdout (applies to plain and JSON output)",
     )
 
     args = parser.parse_args()

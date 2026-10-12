@@ -301,6 +301,31 @@ class QuboAuth:
         except json.JSONDecodeError as err:
             raise QuboAuthError(f"Invalid JSON returned by server: {err}") from err
 
+    @staticmethod
+    def find_profile_index(
+        profiles: list[dict[str, Any]],
+        profile_index: int = 0,
+        account_uuid: str | None = None,
+    ) -> int:
+        """Find the matching profile index from verification results."""
+        if not profiles:
+            raise QuboAuthError("No account profiles returned in OTP verification response")
+
+        if account_uuid:
+            for idx, p in enumerate(profiles):
+                p_uuid = str(p.get("uuid") or p.get("userUUID") or p.get("userId") or "")
+                if p_uuid == account_uuid:
+                    return idx
+            raise QuboAuthError(
+                f"Account UUID '{account_uuid}' not found among returned profiles"
+            )
+
+        if profile_index < 0 or profile_index >= len(profiles):
+            raise QuboAuthError(
+                f"Profile index {profile_index} out of range (0-{len(profiles) - 1})"
+            )
+        return profile_index
+
     def select_profile(
         self,
         profiles: list[dict[str, Any]],
@@ -308,26 +333,10 @@ class QuboAuth:
         account_uuid: str | None = None,
     ) -> TokenPayload:
         """Adopt session tokens from a selected profile returned by OTP verification."""
-        if not profiles:
-            raise QuboAuthError("No account profiles returned in OTP verification response")
-
-        selected_profile: dict[str, Any] | None = None
-        if account_uuid:
-            for p in profiles:
-                p_uuid = str(p.get("uuid") or p.get("userUUID") or p.get("userId") or "")
-                if p_uuid == account_uuid:
-                    selected_profile = p
-                    break
-            if not selected_profile:
-                raise QuboAuthError(
-                    f"Account UUID '{account_uuid}' not found among returned profiles"
-                )
-        else:
-            if profile_index < 0 or profile_index >= len(profiles):
-                raise QuboAuthError(
-                    f"Profile index {profile_index} out of range (0-{len(profiles) - 1})"
-                )
-            selected_profile = profiles[profile_index]
+        idx = self.find_profile_index(
+            profiles, profile_index=profile_index, account_uuid=account_uuid
+        )
+        selected_profile = profiles[idx]
 
         access_token = selected_profile.get("accessToken") or selected_profile.get("token")
         user_uuid = (

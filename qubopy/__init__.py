@@ -35,7 +35,7 @@ from qubopy.models import (
 try:
     __version__ = version("qubopy")
 except PackageNotFoundError:
-    __version__ = "0.1.1"
+    __version__ = "0.1.2"
 
 __all__ = [
     "BleLockCredentials",

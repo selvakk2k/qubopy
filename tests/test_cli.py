@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from qubopy.auth import QuboAuth
 from qubopy.cli import _cmd_tokens, _cmd_verify_otp, _secure_write_text
 from qubopy.models import BleLockCredentials, RtspStreamInfo, TokenPayload
 
@@ -34,6 +35,7 @@ async def test_verify_otp_without_pending_file_no_unbound_error(tmp_path):
         mock_auth.get_phone_otp_profiles = AsyncMock(
             return_value=[{"name": "User", "uuid": "u-1"}]
         )
+        mock_auth.find_profile_index = QuboAuth.find_profile_index
         mock_auth.select_profile.return_value = TokenPayload(
             accessToken="tok",
             refreshToken=None,
@@ -69,6 +71,7 @@ async def test_cmd_login_phone_single_verify_call(monkeypatch):
                 {"name": "Profile1", "uuid": "u-1", "email": "p1@test.com"},
             ]
         )
+        mock_auth.find_profile_index = QuboAuth.find_profile_index
         mock_auth.select_profile.return_value = TokenPayload(
             accessToken="tok-1",
             refreshToken=None,
@@ -192,21 +195,109 @@ def test_cmd_tokens_show_secrets(tmp_path, capsys):
         assert "unmasked_secret_refresh_token" in captured.out
 
 
-def test_cmd_tokens_json(tmp_path, capsys):
-    """Verify _cmd_tokens with --json outputs valid JSON matching session."""
+def test_cmd_tokens_json_masks_tokens_by_default(tmp_path, capsys):
+    """Verify --json masks tokens unless --show-secrets is passed."""
     session_file = tmp_path / "valid_session.json"
     session_data = {
-        "accessToken": "jwt-tok-123",
-        "refreshToken": None,
-        "uuid": "u-999",
+        "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyIjoidS0xIn0.sig1234567890",
+        "refreshToken": "secret_refresh_token_abcdef123456",
+        "uuid": "u-1",
+        "email": "user@test.com",
     }
     session_file.write_text(json.dumps(session_data), encoding="utf-8")
 
-    args = argparse.Namespace(json=True, show_secrets=False)
+    # 1. Without --show-secrets (masked)
+    args_masked = argparse.Namespace(json=True, show_secrets=False)
     with patch("qubopy.cli.TOKEN_FILE", session_file):
-        ret = _cmd_tokens(args)
+        ret = _cmd_tokens(args_masked)
         assert ret == 0
-        captured = capsys.readouterr()
-        parsed = json.loads(captured.out)
-        assert parsed["accessToken"] == "jwt-tok-123"
-        assert parsed["uuid"] == "u-999"
+        parsed = json.loads(capsys.readouterr().out)
+        assert "..." in parsed["accessToken"]
+        assert "1234567890" in parsed["accessToken"]
+        assert parsed["accessToken"] != session_data["accessToken"]
+        assert "..." in parsed["refreshToken"]
+        assert parsed["refreshToken"] != session_data["refreshToken"]
+        assert parsed["email"] == "user@test.com"
+
+    # 2. With --show-secrets (unmasked)
+    args_unmasked = argparse.Namespace(json=True, show_secrets=True)
+    with patch("qubopy.cli.TOKEN_FILE", session_file):
+        ret = _cmd_tokens(args_unmasked)
+        assert ret == 0
+        parsed = json.loads(capsys.readouterr().out)
+        assert parsed["accessToken"] == session_data["accessToken"]
+        assert parsed["refreshToken"] == session_data["refreshToken"]
+
+
+@pytest.mark.asyncio
+async def test_cmd_verify_otp_account_uuid_saves_correct_email(tmp_path):
+    """Verify selecting profile by account_uuid saves the matching profile's email."""
+    session_file = tmp_path / "test_session.json"
+    args = argparse.Namespace(
+        phone="9876543210",
+        isd="+91",
+        session_uuid="sess-uuid-1234",
+        otp="123456",
+        device_name="TestDevice",
+        profile_index=None,
+        account_uuid="u-1",
+    )
+
+    profiles = [
+        {"name": "User0", "uuid": "u-0", "email": "zero@test.com", "accessToken": "tok-0"},
+        {"name": "User1", "uuid": "u-1", "email": "one@test.com", "accessToken": "tok-1"},
+    ]
+
+    with (
+        patch("qubopy.cli.TOKEN_FILE", session_file),
+        patch("qubopy.cli.SESSION_TEMP_FILE", tmp_path / "no_pending.json"),
+        patch("qubopy.cli.QuboAuth") as mock_auth_cls,
+    ):
+        mock_auth = mock_auth_cls.return_value
+        mock_auth.get_phone_otp_profiles = AsyncMock(return_value=profiles)
+        mock_auth.find_profile_index = QuboAuth.find_profile_index
+        mock_auth.select_profile = QuboAuth().select_profile
+        mock_auth.close = AsyncMock()
+
+        code = await _cmd_verify_otp(args)
+        assert code == 0
+        saved = json.loads(session_file.read_text(encoding="utf-8"))
+        assert saved["uuid"] == "u-1"
+        assert saved["email"] == "one@test.com"
+
+
+@pytest.mark.asyncio
+async def test_cmd_verify_otp_profile_index_saves_correct_email(tmp_path):
+    """Verify selecting profile by profile_index saves the matching profile's email."""
+    session_file = tmp_path / "test_session.json"
+    args = argparse.Namespace(
+        phone="9876543210",
+        isd="+91",
+        session_uuid="sess-uuid-1234",
+        otp="123456",
+        device_name="TestDevice",
+        profile_index=1,
+        account_uuid=None,
+    )
+
+    profiles = [
+        {"name": "User0", "uuid": "u-0", "email": "zero@test.com", "accessToken": "tok-0"},
+        {"name": "User1", "uuid": "u-1", "email": "one@test.com", "accessToken": "tok-1"},
+    ]
+
+    with (
+        patch("qubopy.cli.TOKEN_FILE", session_file),
+        patch("qubopy.cli.SESSION_TEMP_FILE", tmp_path / "no_pending.json"),
+        patch("qubopy.cli.QuboAuth") as mock_auth_cls,
+    ):
+        mock_auth = mock_auth_cls.return_value
+        mock_auth.get_phone_otp_profiles = AsyncMock(return_value=profiles)
+        mock_auth.find_profile_index = QuboAuth.find_profile_index
+        mock_auth.select_profile = QuboAuth().select_profile
+        mock_auth.close = AsyncMock()
+
+        code = await _cmd_verify_otp(args)
+        assert code == 0
+        saved = json.loads(session_file.read_text(encoding="utf-8"))
+        assert saved["uuid"] == "u-1"
+        assert saved["email"] == "one@test.com"
