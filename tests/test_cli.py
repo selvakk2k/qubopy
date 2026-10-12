@@ -1,11 +1,14 @@
 """Tests for qubopy CLI and security protections."""
 
 import argparse
+import base64
+import json
+import time
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from qubopy.cli import _cmd_verify_otp, _secure_write_text
+from qubopy.cli import _cmd_tokens, _cmd_verify_otp, _secure_write_text
 from qubopy.models import BleLockCredentials, RtspStreamInfo, TokenPayload
 
 
@@ -86,3 +89,82 @@ def test_secure_write_text(tmp_path):
     target_file = tmp_path / "secure_session.json"
     _secure_write_text(target_file, '{"test": true}')
     assert target_file.read_text(encoding="utf-8") == '{"test": true}'
+
+
+def test_cmd_tokens_no_session(tmp_path, capsys):
+    """Verify _cmd_tokens returns error code 1 when no session file exists."""
+    non_existent = tmp_path / "absent_session.json"
+    args = argparse.Namespace(json=False, show_secrets=False)
+    with patch("qubopy.cli.TOKEN_FILE", non_existent):
+        ret = _cmd_tokens(args)
+        assert ret == 1
+        captured = capsys.readouterr()
+        assert "No active session found" in captured.err
+
+
+def test_cmd_tokens_active_session(tmp_path, capsys):
+    """Verify _cmd_tokens prints masked active session info and expiration."""
+    session_file = tmp_path / "valid_session.json"
+    future_exp = int(time.time() + 1800)
+    payload_b64 = (
+        base64.urlsafe_b64encode(json.dumps({"exp": future_exp, "user": "u-456"}).encode())
+        .decode()
+        .rstrip("=")
+    )
+    fake_jwt = f"header.{payload_b64}.signature"
+    session_data = {
+        "accessToken": fake_jwt,
+        "refreshToken": "ref-tok-long-secret-key-12345",
+        "uuid": "u-456",
+    }
+    session_file.write_text(json.dumps(session_data), encoding="utf-8")
+
+    args = argparse.Namespace(json=False, show_secrets=False)
+    with patch("qubopy.cli.TOKEN_FILE", session_file):
+        ret = _cmd_tokens(args)
+        assert ret == 0
+        captured = capsys.readouterr()
+        assert "User UUID     : u-456" in captured.out
+        assert "Active" in captured.out
+        assert "Email (Continuous / Refreshable)" in captured.out
+        assert "header." in captured.out
+        assert "ref-tok-long-secret-key-12345" not in captured.out
+
+
+def test_cmd_tokens_show_secrets(tmp_path, capsys):
+    """Verify _cmd_tokens with --show-secrets prints full unmasked tokens."""
+    session_file = tmp_path / "valid_session.json"
+    session_data = {
+        "accessToken": "header.payload.unmasked_secret_signature",
+        "refreshToken": "unmasked_secret_refresh_token",
+        "uuid": "u-456",
+    }
+    session_file.write_text(json.dumps(session_data), encoding="utf-8")
+
+    args = argparse.Namespace(json=False, show_secrets=True)
+    with patch("qubopy.cli.TOKEN_FILE", session_file):
+        ret = _cmd_tokens(args)
+        assert ret == 0
+        captured = capsys.readouterr()
+        assert "unmasked_secret_signature" in captured.out
+        assert "unmasked_secret_refresh_token" in captured.out
+
+
+def test_cmd_tokens_json(tmp_path, capsys):
+    """Verify _cmd_tokens with --json outputs valid JSON matching session."""
+    session_file = tmp_path / "valid_session.json"
+    session_data = {
+        "accessToken": "jwt-tok-123",
+        "refreshToken": None,
+        "uuid": "u-999",
+    }
+    session_file.write_text(json.dumps(session_data), encoding="utf-8")
+
+    args = argparse.Namespace(json=True, show_secrets=False)
+    with patch("qubopy.cli.TOKEN_FILE", session_file):
+        ret = _cmd_tokens(args)
+        assert ret == 0
+        captured = capsys.readouterr()
+        parsed = json.loads(captured.out)
+        assert parsed["accessToken"] == "jwt-tok-123"
+        assert parsed["uuid"] == "u-999"

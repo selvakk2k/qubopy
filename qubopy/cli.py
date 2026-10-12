@@ -2,10 +2,13 @@
 
 import argparse
 import asyncio
+import base64
+import datetime
 import getpass
 import json
 import os
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -49,6 +52,89 @@ def _load_session() -> dict[str, Any] | None:
         return json.loads(TOKEN_FILE.read_text(encoding="utf-8"))
     except Exception:
         return None
+
+
+def _cmd_tokens(args: argparse.Namespace) -> int:
+    session = _load_session()
+    if not session or not session.get("accessToken"):
+        print(
+            "Error: No active session found.\n"
+            "Please run 'qubopy login' or 'qubopy login-phone' first.",
+            file=sys.stderr,
+        )
+        return 1
+
+    if getattr(args, "json", False):
+        print(json.dumps(session, indent=2))
+        return 0
+
+    access_token = str(session.get("accessToken", ""))
+    refresh_token = session.get("refreshToken")
+    user_uuid = session.get("uuid", "N/A")
+
+    exp_time: float | None = None
+    remaining_str = "Unknown"
+    status_str = "Unknown"
+    try:
+        parts = access_token.split(".")
+        if len(parts) >= 2:
+            padded = parts[1] + "=" * (-len(parts[1]) % 4)
+            payload = json.loads(base64.urlsafe_b64decode(padded))
+            exp_val = payload.get("exp")
+            if exp_val is not None:
+                exp_time = float(exp_val)
+                diff = exp_time - time.time()
+                if diff > 0:
+                    status_str = "Active"
+                    mins = int(diff // 60)
+                    secs = int(diff % 60)
+                    remaining_str = f"{mins}m {secs}s remaining"
+                else:
+                    status_str = "Expired"
+                    remaining_str = "0m (Expired)"
+    except Exception:
+        pass
+
+    session_type = (
+        "Email (Continuous / Refreshable)"
+        if refresh_token
+        else "Phone OTP (1-hour session)"
+    )
+
+    print("=== Qubo Active Session Tokens ===")
+    print(f"User UUID     : {user_uuid}")
+    print(f"Session Type  : {session_type}")
+    print(f"Token Status  : {status_str} ({remaining_str})")
+    if exp_time:
+        dt = datetime.datetime.fromtimestamp(exp_time, tz=datetime.timezone.utc)
+        print(f"Expires At    : {dt.strftime('%Y-%m-%d %H:%M:%S UTC')}")
+    print(f"Refresh Token : {'Present' if refresh_token else 'None (Phone OTP)'}")
+    print(f"Session File  : {TOKEN_FILE}")
+    print("-" * 35)
+
+    if getattr(args, "show_secrets", False):
+        print(f"Access Token  :\n{access_token}\n")
+        if refresh_token:
+            print(f"Refresh Token :\n{refresh_token}\n")
+    else:
+        masked_access = (
+            f"{access_token[:15]}...{access_token[-10:]}"
+            if len(access_token) > 25
+            else access_token
+        )
+        print(f"Access Token  : {masked_access}")
+        if refresh_token:
+            r_str = str(refresh_token)
+            masked_refresh = (
+                f"{r_str[:10]}...{r_str[-5:]}" if len(r_str) > 15 else r_str
+            )
+            print(f"Refresh Token : {masked_refresh}")
+        print(
+            "\nTip: Pass '--show-secrets' for unmasked tokens, "
+            "or '--json' for full JSON export."
+        )
+
+    return 0
 
 
 def _handle_cli_error(err: Exception) -> None:
@@ -621,7 +707,27 @@ def main() -> None:
     p_dwifi.add_argument("--token", help="Override JWT access token")
     p_dwifi.add_argument("--user-uuid", help="Override User UUID")
 
+    # tokens (with 'session', 'dump-tokens' aliases)
+    p_tokens = subparsers.add_parser(
+        "tokens",
+        aliases=["session", "dump-tokens"],
+        help="Display active session tokens, expiration, and status",
+    )
+    p_tokens.add_argument(
+        "--json",
+        action="store_true",
+        help="Output raw session JSON payload",
+    )
+    p_tokens.add_argument(
+        "--show-secrets",
+        action="store_true",
+        help="Print complete unmasked tokens to stdout",
+    )
+
     args = parser.parse_args()
+
+    if args.command in ("tokens", "session", "dump-tokens"):
+        sys.exit(_cmd_tokens(args))
 
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)

@@ -359,6 +359,11 @@ python -m qubopy verify-otp --otp <otp_code>
 python -m qubopy verify-otp --otp <otp_code> --profile-index 1
 python -m qubopy verify-otp --otp <otp_code> --account-uuid <user_uuid>
 
+# Verify active session tokens, status, and expiration (aliases: 'session', 'dump-tokens')
+python -m qubopy tokens
+python -m qubopy tokens --show-secrets
+python -m qubopy tokens --json
+
 # List all units and paired devices (alias: 'devices')
 python -m qubopy devices
 python -m qubopy list-devices
