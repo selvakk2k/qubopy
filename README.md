@@ -24,7 +24,8 @@ An asynchronous Python client library and local Bluetooth Low Energy (BLE) crede
   - [3. Air Purifiers - HPH Series (API Modeled)](#3-air-purifiers-hph-series--api-modeled--untested)
   - [4. Smart Lighting - HLB Series (API Modeled)](#4-smart-lighting-hlb-series--api-modeled--untested)
   - [5. Cameras & Doorbells - HCP / HCD Series (Hardware Verified)](#5-cameras--doorbells-hcp--hcd-series--hardware-verified)
-  - [6. Smart Door Locks - HLM / HLW Series](#6-smart-door-locks-hlm--hlw-series)
+  - [6. Dashcams - HCA Series (Hardware Verified)](#6-dashcams-hca-series--hardware-verified)
+  - [7. Smart Door Locks - HLM / HLW Series](#7-smart-door-locks-hlm--hlw-series)
 - [Command Line Interface (CLI)](#command-line-interface-cli)
 - [IP Camera & Media Streaming Architecture](#ip-camera--media-streaming-architecture)
 - [Cloud MQTT Broker & Real-Time Telemetry](#cloud-mqtt-broker--real-time-telemetry)
@@ -268,7 +269,27 @@ async def operate_camera(camera: QuboCamera):
 
 ---
 
-### 6. Smart Door Locks (HLM / HLW Series)
+### 6. Dashcams (HCA Series) (`✅ Hardware Verified`)
+
+Query in-car Wi-Fi AP credentials, parking monitoring status, and overspeed alerts directly from the cloud shadow (even while the vehicle is parked and unpowered):
+
+```python
+from qubopy.devices import QuboDashcam
+
+# Assuming 'dashcam' is an instance of QuboDashcam from get_all_devices()
+async def inspect_dashcam(dashcam: QuboDashcam):
+    await dashcam.refresh()
+    print(f"Dashcam Name   : {dashcam.name} ({dashcam.model})")
+    print(f"Serial Number  : {dashcam.serial_number}")
+    print(f"In-Car Wi-Fi AP: {dashcam.wifi_ap_ssid}")
+    print(f"WPA2 Password  : {dashcam.wifi_ap_password}")
+    print(f"Parking Mode   : {'Enabled' if dashcam.is_parking_monitoring_on else 'Disabled'}")
+    print(f"Speed Warning  : {dashcam.overspeed_limit} {dashcam.speed_unit}")
+```
+
+---
+
+### 7. Smart Door Locks (HLM / HLW Series)
 
 Qubo smart door locks support two distinct integration strategies:
 
