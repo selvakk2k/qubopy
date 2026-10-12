@@ -290,12 +290,21 @@ class QuboAuth:
             headers = {
                 "Content-Type": "application/json",
                 "Authorization": f"Bearer {self._tokens.access_token}",
+                "Subscriber-Key": self._tokens.access_token,
+                "User-UUID": self._tokens.user_uuid,
+                "Token-Type": "USER",
+                "Source-Device-Id": self.device_id,
+                "App-Id": self.app_id,
+                "Source": "Android",
+            }
+            payload = {
+                "accessToken": self._tokens.access_token,
                 "refreshToken": self._tokens.refresh_token,
             }
 
             session = await self._get_session()
             try:
-                async with session.post(url, headers=headers) as response:
+                async with session.post(url, json=payload, headers=headers) as response:
                     text = await response.text()
                     if response.status != 200:
                         raise QuboAuthError(
@@ -338,9 +347,12 @@ class QuboAuth:
         return {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {token}",
-            "Token-Type": "accessToken",
+            "Token-Type": "USER",
             "User-UUID": self._tokens.user_uuid,  # type: ignore[union-attr]
             "Subscriber-Key": token,
+            "Source-Device-Id": self.device_id,
+            "App-Id": self.app_id,
+            "Source": "Android",
         }
 
     async def close(self) -> None:

@@ -294,10 +294,6 @@ class QuboClient:
         seen_uuids: set[str] = set()
 
         units = await self.get_units()
-        if not units:
-            # Fallback if no units returned or endpoint structure differs
-            units = [{"unitUUID": "default", "name": "Default Unit"}]
-
         for unit in units:
             unit_uuid = unit.get("unitUUID") or unit.get("uuid") or unit.get("unitId") or ""
             raw_devs = await self.get_devices_for_unit(unit_uuid) if unit_uuid else []
@@ -336,27 +332,6 @@ class QuboClient:
                     extraData=d.get("extraData", d),
                 )
                 devices.append(create_device(dev_info, self, shadow_obj))
-
-        if not devices:
-            # Fallback to bulk shadow discovery if unit hierarchy returned no devices
-            shadows = await self.get_all_shadows()
-            for dev_uuid, shadow in shadows.items():
-                if dev_uuid in seen_uuids:
-                    continue
-                raw = shadow.raw
-                dev_info = DeviceModelInfo(
-                    uuid=dev_uuid,
-                    deviceId=dev_uuid,
-                    name=raw.get("name", raw.get("deviceName", f"Qubo {dev_uuid[:6]}")),
-                    model=raw.get("model", raw.get("deviceModel", "")),
-                    type=raw.get("type", raw.get("deviceType", "")),
-                    unitUUID=raw.get("unitUUID", raw.get("unitId", "")),
-                    entityUUID=raw.get("entityUUID", raw.get("entityId", "")),
-                    isOnline=raw.get("isOnline", True),
-                    extraData=raw.get("extraData", raw),
-                )
-                devices.append(create_device(dev_info, self, shadow))
-                seen_uuids.add(dev_uuid)
 
         return devices
 

@@ -157,10 +157,16 @@ async def test_token_refresh():
     }
     mock_resp = MockClientResponse(200, json.dumps(refresh_payload))
 
-    with patch("aiohttp.ClientSession.post", return_value=mock_resp):
+    with patch("aiohttp.ClientSession.post", return_value=mock_resp) as mock_post:
         new_tokens = await auth.refresh_session()
         assert new_tokens.access_token == refresh_payload["accessToken"]
         assert new_tokens.refresh_token == "new-refresh-token"
+        mock_post.assert_called_once()
+        _, kwargs = mock_post.call_args
+        assert kwargs["json"] == {
+            "accessToken": "old-token",
+            "refreshToken": "valid-refresh",
+        }
 
     await auth.close()
 
@@ -171,7 +177,9 @@ async def test_get_headers(sample_auth):
     headers = await sample_auth.get_headers()
     assert headers["Content-Type"] == "application/json"
     assert headers["Authorization"].startswith("Bearer eyJ")
-    assert headers["Token-Type"] == "accessToken"
+    assert headers["Token-Type"] == "USER"
     assert headers["User-UUID"] == "user-123"
     assert headers["Subscriber-Key"] == sample_auth.tokens.access_token
+    assert headers["Source-Device-Id"] == sample_auth.device_id
+    assert headers["Source"] == "Android"
     await sample_auth.close()

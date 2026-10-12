@@ -40,7 +40,8 @@ async def test_get_all_shadows(sample_client):
 @pytest.mark.asyncio
 async def test_get_all_devices_factory(sample_client):
     """Verify device factory correctly instantiates typed devices."""
-    bulk_data = [
+    units_data = [{"unitUUID": "u1", "name": "Kitchen"}]
+    devices_data = [
         {
             "deviceId": "plug-01",
             "name": "Kitchen Plug",
@@ -50,8 +51,12 @@ async def test_get_all_devices_factory(sample_client):
         }
     ]
 
-    mock_resp = MockClientResponse(200, json.dumps(bulk_data))
-    with patch("aiohttp.ClientSession.request", return_value=mock_resp):
+    def mock_request(method, url, **kwargs):
+        if "/devices" in url:
+            return MockClientResponse(200, json.dumps(devices_data))
+        return MockClientResponse(200, json.dumps(units_data))
+
+    with patch("aiohttp.ClientSession.request", side_effect=mock_request):
         devices = await sample_client.get_all_devices()
         assert len(devices) == 1
         device = devices[0]
