@@ -88,10 +88,14 @@ class BleLockCredentials(BaseModel):
     device_uuid: str
     device_name: str
     mac_address: str = Field(description="Physical Bluetooth MAC address (dmac)")
-    auth_key: str = Field(repr=False, description="Secret BLE handshake authentication key (dbtauthkey)")
+    auth_key: str = Field(
+        repr=False, description="Secret BLE handshake authentication key (dbtauthkey)"
+    )
     offline_key: str = Field(repr=False, description="Offline PIN calculation seed (dbtoffkey)")
     offline_key_flag: str | None = Field(default=None, description="Offline key active flag")
-    admin_pass: str | None = Field(default=None, repr=False, description="Master administrator passcode")
+    admin_pass: str | None = Field(
+        default=None, repr=False, description="Master administrator passcode"
+    )
     admin_flag: str | None = Field(default=None, description="Administrator active flag")
     bluetooth_name: str | None = Field(default=None, description="Advertised BLE name (dbtname)")
     battery_level: int | None = Field(default=None, description="Battery percentage (0-100)")

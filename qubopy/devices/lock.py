@@ -1,3 +1,5 @@
+"""Smart lock device abstraction and local BLE key enabler (HLM, HLW, HLR)."""
+
 import logging
 from typing import Any
 
@@ -132,9 +134,10 @@ class QuboLock(QuboDevice):
         """
         target_gw = gateway_uuid or self.gateway_id
         if not target_gw:
+            u_id = self.unit_id or "default"
             raise QuboCommandError(
                 f"Cannot unlock {self.device_id} ({self.name}): no in-home gateway "
-                f"(Video Doorbell Pro or Smart Camera) was found in unit '{self.unit_id or 'default'}'. "
+                f"(Video Doorbell Pro or Smart Camera) was found in unit '{u_id}'. "
                 "This lock is operating in standalone Bluetooth mode; use local BLE key export "
                 "(get_ble_lock_keys()) or provide an explicit gateway_uuid."
             )

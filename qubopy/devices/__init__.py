@@ -46,7 +46,12 @@ def is_gateway_device(device_data: dict | DeviceModelInfo) -> bool:
         model = device_data.model or ""
         dev_type = device_data.device_type or ""
     elif isinstance(device_data, dict):
-        model = device_data.get("deviceModel") or device_data.get("model") or device_data.get("aModelNo") or ""
+        model = (
+            device_data.get("deviceModel")
+            or device_data.get("model")
+            or device_data.get("aModelNo")
+            or ""
+        )
         dev_type = device_data.get("deviceType") or device_data.get("type") or ""
     else:
         return False

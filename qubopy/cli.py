@@ -83,7 +83,8 @@ async def _cmd_login(args: argparse.Namespace) -> int:
                 pass
         if not password:
             print(
-                "Error: Password is required. Provide --password, set QUBO_PASSWORD, or enter interactively.",
+                "Error: Password is required. Provide --password, set QUBO_PASSWORD, "
+                "or enter interactively.",
                 file=sys.stderr,
             )
             return 1
@@ -158,7 +159,10 @@ async def _cmd_login_phone(args: argparse.Namespace) -> int:
                     device_attribute=device_name,
                 )
                 if not profiles:
-                    print("Error: No account profiles returned from OTP verification.", file=sys.stderr)
+                    print(
+                        "Error: No account profiles returned from OTP verification.",
+                        file=sys.stderr,
+                    )
                     return 1
 
                 selected_idx = 0
@@ -235,7 +239,11 @@ async def _cmd_verify_otp(args: argparse.Namespace) -> int:
         print("Error: Phone number is required. Provide --phone <number>", file=sys.stderr)
         return 1
     if not session_uuid:
-        print("Error: Session UUID is required. Provide --session-uuid <uuid> or run login-phone first.", file=sys.stderr)
+        print(
+            "Error: Session UUID is required. Provide --session-uuid <uuid> or run "
+            "login-phone first.",
+            file=sys.stderr,
+        )
         return 1
 
     clean_isd = isd if isd.startswith("+") else f"+{isd}"
@@ -339,7 +347,11 @@ async def _cmd_list_devices(args: argparse.Namespace) -> int:
                 type_str = d.__class__.__name__
                 if isinstance(d, QuboLock):
                     type_str = "Lock (Gateway)" if d.is_gateway_accessible else "Lock (BLE Only)"
-                print(f"{d.name:<25} {d.model:<12} {type_str:<18} {online_str:<8} {d.device_id:<36}")
+                line = (
+                    f"{d.name:<25} {d.model:<12} {type_str:<18} {online_str:<8} "
+                    f"{d.device_id:<36}"
+                )
+                print(line)
             print()
             return 0
     except QuboError as err:
@@ -412,7 +424,10 @@ async def _cmd_unlock(args: argparse.Namespace) -> int:
                 print(f"Error: Device {device_id} not found in account.", file=sys.stderr)
                 return 1
             if not isinstance(target, QuboLock):
-                print(f"Error: Device {device_id} ({target.name}) is not a smart lock.", file=sys.stderr)
+                print(
+                    f"Error: Device {device_id} ({target.name}) is not a smart lock.",
+                    file=sys.stderr,
+                )
                 return 1
 
             res = await target.unlock(gateway_uuid=gateway_id)
@@ -567,28 +582,42 @@ def main() -> None:
     p_list.add_argument("--user-uuid", help="Override User UUID")
 
     # export-ble-keys
-    p_ble = subparsers.add_parser("export-ble-keys", help="Export offline BLE credentials for smart locks")
+    p_ble = subparsers.add_parser(
+        "export-ble-keys", help="Export offline BLE credentials for smart locks"
+    )
     p_ble.add_argument("--device-id", help="Optional specific device UUID")
     p_ble.add_argument("--token", help="Override JWT access token")
     p_ble.add_argument("--user-uuid", help="Override User UUID")
 
     # unlock
-    p_unlock = subparsers.add_parser("unlock", help="Send cloud unlock command to a smart lock via gateway")
+    p_unlock = subparsers.add_parser(
+        "unlock", help="Send cloud unlock command to a smart lock via gateway"
+    )
     p_unlock.add_argument("--device-id", required=True, help="Lock device UUID to unlock")
     p_unlock.add_argument("--gateway-id", help="Optional gateway device UUID override")
     p_unlock.add_argument("--token", help="Override JWT access token")
     p_unlock.add_argument("--user-uuid", help="Override User UUID")
 
     # stream
-    p_stream = subparsers.add_parser("stream", help="Mint and display live RTSPS stream URL for a camera")
-    p_stream.add_argument("--device-id", help="Camera device UUID (optional if only 1 camera in account)")
-    p_stream.add_argument("--quality", default="high", choices=["high", "low"], help="Stream resolution/quality")
+    p_stream = subparsers.add_parser(
+        "stream", help="Mint and display live RTSPS stream URL for a camera"
+    )
+    p_stream.add_argument(
+        "--device-id", help="Camera device UUID (optional if only 1 camera in account)"
+    )
+    p_stream.add_argument(
+        "--quality", default="high", choices=["high", "low"], help="Stream resolution/quality"
+    )
     p_stream.add_argument("--token", help="Override JWT access token")
     p_stream.add_argument("--user-uuid", help="Override User UUID")
 
     # dashcam-wifi
-    p_dwifi = subparsers.add_parser("dashcam-wifi", help="Show in-car Wi-Fi AP credentials for dashcam")
-    p_dwifi.add_argument("--device-id", help="Dashcam device UUID (optional if only 1 dashcam in account)")
+    p_dwifi = subparsers.add_parser(
+        "dashcam-wifi", help="Show in-car Wi-Fi AP credentials for dashcam"
+    )
+    p_dwifi.add_argument(
+        "--device-id", help="Dashcam device UUID (optional if only 1 dashcam in account)"
+    )
     p_dwifi.add_argument("--token", help="Override JWT access token")
     p_dwifi.add_argument("--user-uuid", help="Override User UUID")
 

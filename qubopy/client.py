@@ -6,7 +6,6 @@ from typing import Any
 from urllib.parse import urlsplit
 
 import aiohttp
-from typing_extensions import Self
 
 from qubopy.auth import QuboAuth
 from qubopy.const import (
@@ -78,7 +77,8 @@ class QuboClient:
                 or parsed.netloc != base_parsed.netloc
             ):
                 raise ValueError(
-                    f"Invalid request URL: target host ({parsed.netloc}) must match base_url ({base_parsed.netloc})"
+                    f"Invalid request URL: target host ({parsed.netloc}) "
+                    f"must match base_url ({base_parsed.netloc})"
                 )
             url = path
         else:
@@ -525,7 +525,8 @@ class QuboClient:
                 ):
                     if len(unit_gateways) > 1:
                         _LOGGER.info(
-                            "Multiple gateways found in unit %s (%s); auto-binding lock %s to first gateway %s",
+                            "Multiple gateways found in unit %s (%s); auto-binding lock %s "
+                            "to first gateway %s",
                             unit_uuid,
                             unit_gateways,
                             dev_uuid,
@@ -570,7 +571,7 @@ class QuboClient:
             self._session = None
         await self.auth.close()
 
-    async def __aenter__(self) -> Self:
+    async def __aenter__(self) -> "QuboClient":
         return self
 
     async def __aexit__(

@@ -59,7 +59,7 @@ class QuboDashcam(QuboDevice):
 
     @property
     def is_audio_recording_on(self) -> bool | None:
-        """Return True if cabin microphone audio recording is enabled, False if disabled, None if unknown."""
+        """Return True if cabin mic audio recording is on, False if off, None if unknown."""
         val = self.reported_state.get("audio_recording")
         return _as_bool(val)
 

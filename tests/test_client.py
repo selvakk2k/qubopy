@@ -298,16 +298,20 @@ async def test_client_retry_propagates_500_error(sample_client):
             return MockClientResponse(401, json.dumps({"error": "Unauthorized"}))
         return MockClientResponse(500, "Internal Server Error")
 
-    with patch.object(sample_client.auth, "refresh_session", new_callable=AsyncMock) as mock_refresh:
+    with (
+        patch.object(
+            sample_client.auth, "refresh_session", new_callable=AsyncMock
+        ) as mock_refresh,
+        patch("aiohttp.ClientSession.request", side_effect=mock_handler),
+    ):
         mock_refresh.return_value = sample_client.auth.set_tokens(
             access_token="tok2",
             refresh_token="ref1",
             user_uuid="user-1",
         )
-        with patch("aiohttp.ClientSession.request", side_effect=mock_handler):
-            with pytest.raises(QuboCommandError):
-                await sample_client.request("GET", "/test/error")
-            assert call_count == 2
+        with pytest.raises(QuboCommandError):
+            await sample_client.request("GET", "/test/error")
+        assert call_count == 2
 
     await sample_client.close()
 

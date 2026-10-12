@@ -1,3 +1,5 @@
+"""Base device abstraction for Qubo hardware."""
+
 import logging
 from typing import TYPE_CHECKING, Any
 
@@ -134,4 +136,5 @@ class QuboDevice:
         return await self.update_attribute(payload)
 
     def __repr__(self) -> str:
-        return f"<{self.__class__.__name__} name={self.name!r} model={self.model!r} id={self.device_id!r}>"
+        cls_name = self.__class__.__name__
+        return f"<{cls_name} name={self.name!r} model={self.model!r} id={self.device_id!r}>"

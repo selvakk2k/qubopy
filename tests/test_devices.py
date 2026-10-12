@@ -1,9 +1,12 @@
 """Tests for typed device abstractions."""
 
+import importlib
+import pkgutil
 from unittest.mock import AsyncMock
 
 import pytest
 
+import qubopy
 from qubopy.devices import (
     QuboAirPurifier,
     QuboCamera,
@@ -572,6 +575,15 @@ def test_is_gateway_device_matching():
     assert not is_gateway_device({"deviceModel": "HPH02", "deviceType": "AirPurifier"})
     assert not is_gateway_device({"deviceModel": "HLB01", "deviceType": "SmartBulb"})
     assert not is_gateway_device({"deviceModel": "HLM01", "deviceType": "SmartDoorLock"})
+
+
+def test_all_modules_have_docstrings():
+    """Verify that every module under qubopy defines a non-empty module docstring."""
+    assert qubopy.__doc__, "qubopy package root is missing a docstring"
+    for info in pkgutil.walk_packages(qubopy.__path__, prefix="qubopy."):
+        mod = importlib.import_module(info.name)
+        assert mod.__doc__, f"Module {info.name} is missing a docstring"
+
 
 
 

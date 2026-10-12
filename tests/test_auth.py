@@ -36,7 +36,10 @@ async def test_email_login_success():
     """Verify email and password login flow."""
     auth = QuboAuth()
     response_payload = {
-        "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjIwMDAwMDAwMDAsInV1aWQiOiJ1c2VyLTk5OSJ9.sig",
+        "accessToken": (
+            "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9."
+            "eyJleHAiOjIwMDAwMDAwMDAsInV1aWQiOiJ1c2VyLTk5OSJ9.sig"
+        ),
         "refreshToken": "refresh-token-xyz",
         "uuid": "user-999",
     }
@@ -81,10 +84,12 @@ async def test_email_login_invalid_credentials():
 
 @pytest.mark.asyncio
 async def test_phone_otp_flow():
-    """Verify phone OTP request and verification with required App-Id, Source, and deviceAttribute."""
+    """Verify phone OTP flow with required App-Id, Source, and deviceAttribute."""
     auth = QuboAuth(device_id="test-device-uuid")
 
-    mock_resp_request = MockClientResponse(200, json.dumps({"uuid": "session-123", "status": "OTP_SENT"}))
+    mock_resp_request = MockClientResponse(
+        200, json.dumps({"uuid": "session-123", "status": "OTP_SENT"})
+    )
     with patch("aiohttp.ClientSession.post", return_value=mock_resp_request) as mock_post:
         req_res = await auth.request_phone_otp("9876543210", "+91")
         assert req_res["status"] == "OTP_SENT"
@@ -98,7 +103,10 @@ async def test_phone_otp_flow():
         assert kwargs["json"]["deviceAttribute"] == "Qubopy"
 
     otp_payload = {
-        "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjIwMDAwMDAwMDAsInV1aWQiOiJ1c2VyLTg4OCJ9.sig",
+        "accessToken": (
+            "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9."
+            "eyJleHAiOjIwMDAwMDAwMDAsInV1aWQiOiJ1c2VyLTg4OCJ9.sig"
+        ),
         "refreshToken": "ref-888",
         "uuid": "user-888",
     }
@@ -123,13 +131,19 @@ async def test_phone_otp_multi_account_list():
 
     multi_account_payload = [
         {
-            "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjIwMDAwMDAwMDAsInV1aWQiOiJ1c2VyLTExMSJ9.sig",
+            "token": (
+                "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9."
+                "eyJleHAiOjIwMDAwMDAwMDAsInV1aWQiOiJ1c2VyLTExMSJ9.sig"
+            ),
             "uuid": "user-111",
             "email": "user1@example.com",
             "name": "User One",
         },
         {
-            "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjIwMDAwMDAwMDAsInV1aWQiOiJ1c2VyLTIyMiJ9.sig",
+            "token": (
+                "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9."
+                "eyJleHAiOjIwMDAwMDAwMDAsInV1aWQiOiJ1c2VyLTIyMiJ9.sig"
+            ),
             "uuid": "user-222",
             "email": "user2@example.com",
             "name": "User Two",
@@ -240,7 +254,10 @@ async def test_token_refresh():
     )
 
     refresh_payload = {
-        "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjIxMDAwMDAwMDAsInV1aWQiOiJ1c2VyLTk5OSJ9.sig",
+        "accessToken": (
+            "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9."
+            "eyJleHAiOjIxMDAwMDAwMDAsInV1aWQiOiJ1c2VyLTk5OSJ9.sig"
+        ),
         "refreshToken": "new-refresh-token",
     }
     mock_resp = MockClientResponse(200, json.dumps(refresh_payload))
@@ -346,7 +363,7 @@ async def test_auth_get_valid_access_token_expired_failure():
 
 @pytest.mark.asyncio
 async def test_auth_get_valid_access_token_near_expiry_warning():
-    """When token is near expiry (< 300s) but not yet expired, failed refresh logs warning and returns token."""
+    """When token is near expiry (< 300s) but valid, failed refresh logs warning and returns."""
     auth = QuboAuth(base_url="http://localhost")
     # Token expires 100 seconds in the future
     auth.set_tokens(
@@ -361,4 +378,59 @@ async def test_auth_get_valid_access_token_near_expiry_warning():
         assert token == "valid-tok"
 
     await auth.close()
+
+
+@pytest.mark.asyncio
+async def test_auth_expired_without_refresh_token_raises():
+    """When token is expired and has no refresh token, raise QuboAuthError."""
+    auth = QuboAuth(base_url="http://localhost")
+    # Expired token without refresh token (e.g. phone OTP session)
+    auth.set_tokens(
+        access_token="otp-expired-token",
+        refresh_token=None,
+        user_uuid="u-otp",
+        expires_at=time.time() - 60,
+    )
+
+    with pytest.raises(QuboAuthError, match="Session expired; please log in again"):
+        await auth.get_valid_access_token()
+
+    # Valid token without refresh token returns token normally
+    auth.set_tokens(
+        access_token="otp-valid-token",
+        refresh_token=None,
+        user_uuid="u-otp",
+        expires_at=time.time() + 3600,
+    )
+    token = await auth.get_valid_access_token()
+    assert token == "otp-valid-token"
+
+    await auth.close()
+
+
+@pytest.mark.asyncio
+async def test_refresh_session_missing_access_token_preserves_tokens():
+    """Server response missing accessToken raises QuboAuthError and preserves old tokens."""
+    auth = QuboAuth(base_url="http://localhost")
+    auth.set_tokens(
+        access_token="initial-access-token",
+        refresh_token="initial-refresh-token",
+        user_uuid="user-1",
+        expires_at=time.time() + 100,
+    )
+
+    mock_resp = MockClientResponse(200, json.dumps({"status": "SUCCESS"}))
+    with (
+        patch("aiohttp.ClientSession.post", return_value=mock_resp),
+        pytest.raises(QuboAuthError, match="Refresh response missing access token"),
+    ):
+        await auth.refresh_session(failed_token="initial-access-token")
+
+    # Verify old tokens remain completely untouched
+    assert auth.tokens.access_token == "initial-access-token"
+    assert auth.tokens.refresh_token == "initial-refresh-token"
+    assert auth.tokens.user_uuid == "user-1"
+
+    await auth.close()
+
 
