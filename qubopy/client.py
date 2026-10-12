@@ -317,8 +317,11 @@ class QuboClient:
 
                 # Copy extraData and bind gateway if lock lacks one
                 extra = dict(d.get("extraData", d))
-                dev_type_str = (d.get("deviceType") or d.get("type") or "").upper()
-                dev_model_str = (d.get("deviceModel") or d.get("model") or "").upper()
+                dev_type = d.get("deviceType") or d.get("type") or ""
+                dev_model = d.get("deviceModel") or d.get("model") or d.get("aModelNo") or ""
+                dev_name = d.get("deviceName") or d.get("name") or f"Qubo {dev_uuid[:6]}"
+                dev_type_str = dev_type.upper()
+                dev_model_str = dev_model.upper()
                 is_lock = "LOCK" in dev_type_str or any(
                     dev_model_str.startswith(p) for p in ("HLM", "HLW", "HLR")
                 )
@@ -344,9 +347,9 @@ class QuboClient:
                 dev_info = DeviceModelInfo(
                     uuid=dev_uuid,
                     deviceId=dev_uuid,
-                    name=d.get("deviceName", d.get("name", f"Qubo {dev_uuid[:6]}")),
-                    model=d.get("deviceModel", d.get("model", "")),
-                    type=d.get("deviceType", d.get("type", "")),
+                    name=dev_name,
+                    model=dev_model,
+                    type=dev_type,
                     unitUUID=unit_uuid or d.get("unitUUID", ""),
                     entityUUID=d.get("entityUUID", d.get("entityId", "")),
                     isOnline=bool(d.get("isOnline", d.get("online", True))),

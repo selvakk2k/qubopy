@@ -5,6 +5,7 @@ from qubopy.const import (
     PREFIX_AIR_PURIFIER,
     PREFIX_CAMERA,
     PREFIX_CLIMATE_SENSOR,
+    PREFIX_DASHCAM,
     PREFIX_DOORBELL,
     PREFIX_SECURITY_SENSOR,
     PREFIX_SMART_LIGHT,
@@ -13,6 +14,7 @@ from qubopy.const import (
 )
 from qubopy.devices.base import QuboDevice
 from qubopy.devices.camera import QuboCamera
+from qubopy.devices.dashcam import QuboDashcam
 from qubopy.devices.light import QuboLight
 from qubopy.devices.lock import QuboLock
 from qubopy.devices.plug import QuboPlug
@@ -30,6 +32,7 @@ __all__ = [
     "QuboLight",
     "QuboLock",
     "QuboCamera",
+    "QuboDashcam",
     "QuboSensor",
     "create_device",
     "is_gateway_device",
@@ -42,13 +45,17 @@ def is_gateway_device(device_data: dict | DeviceModelInfo) -> bool:
         model = device_data.model or ""
         dev_type = device_data.device_type or ""
     elif isinstance(device_data, dict):
-        model = device_data.get("deviceModel") or device_data.get("model") or ""
+        model = device_data.get("deviceModel") or device_data.get("model") or device_data.get("aModelNo") or ""
         dev_type = device_data.get("deviceType") or device_data.get("type") or ""
     else:
         return False
 
     m_upper = model.upper()
     t_lower = dev_type.lower()
+
+    # Dashcams are mobile automotive devices, not in-home gateways
+    if "dash" in t_lower or any(m_upper.startswith(p) for p in PREFIX_DASHCAM):
+        return False
 
     if any(m_upper.startswith(p) for p in PREFIX_DOORBELL + PREFIX_CAMERA):
         return True
@@ -82,6 +89,14 @@ def create_device(
     # Smart Door Locks
     if any(model_upper.startswith(p) for p in PREFIX_SMART_LOCK) or "LOCK" in type_upper:
         return QuboLock(info, client, shadow)
+
+    # Automotive Dashcams (HCA series, Qubo Go / Qubo Pro)
+    if (
+        any(model_upper.startswith(p) for p in PREFIX_DASHCAM)
+        or "DASHCAM" in type_upper
+        or "DASH" in type_upper
+    ):
+        return QuboDashcam(info, client, shadow)
 
     # Cameras and Doorbells
     if (

@@ -6,6 +6,7 @@ import pytest
 from qubopy.devices import (
     QuboAirPurifier,
     QuboCamera,
+    QuboDashcam,
     QuboLight,
     QuboPlug,
     QuboSensor,
@@ -169,4 +170,34 @@ async def test_lock_gateway_accessibility_and_unlock(sample_client):
     with pytest.raises(QuboCommandError) as exc_info:
         await lock_ble.unlock()
     assert "standalone Bluetooth mode" in str(exc_info.value)
+
+
+def test_dashcam_device(sample_client):
+    """Test QuboDashcam instantiation, properties, and telemetry."""
+    info = DeviceModelInfo.model_validate({
+        "deviceUUID": "dash-01",
+        "deviceName": "XUV 300 Dashcam",
+        "aModelNo": "HCA08B",
+        "deviceType": "2kDashCam",
+        "extraData": {"serialNumber": "IN2507JJIM09358"},
+    })
+    assert info.model == "HCA08B"
+    assert info.uuid == "dash-01"
+    assert info.name == "XUV 300 Dashcam"
+
+    shadow = DeviceShadow(
+        device_uuid="dash-01",
+        reported={
+            "recording": True,
+            "sdcard_status": "NORMAL",
+            "parking_mode": True,
+        },
+    )
+    dev = create_device(info, sample_client, shadow)
+    assert isinstance(dev, QuboDashcam)
+    assert dev.serial_number == "IN2507JJIM09358"
+    assert dev.is_recording is True
+    assert dev.sd_card_status == "NORMAL"
+    assert dev.is_parking_monitoring_on is True
+
 

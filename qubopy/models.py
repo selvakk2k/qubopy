@@ -1,7 +1,7 @@
 """Pydantic data models for qubopy."""
 
 from typing import Any
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
 
 class TokenPayload(BaseModel):
@@ -43,15 +43,21 @@ class DeviceModelInfo(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True, extra="ignore")
 
-    uuid: str = Field(alias="uuid", default="")
-    device_id: str = Field(alias="deviceId", default="")
-    name: str = "Qubo Device"
-    model: str = ""
-    device_type: str = Field(default="", alias="type")
-    unit_uuid: str = Field(default="", alias="unitUUID")
-    entity_uuid: str = Field(default="", alias="entityUUID")
-    is_online: bool = Field(default=True, alias="isOnline")
-    extra_data: dict[str, Any] = Field(default_factory=dict, alias="extraData")
+    uuid: str = Field(default="", validation_alias=AliasChoices("uuid", "deviceUUID"))
+    device_id: str = Field(
+        default="", validation_alias=AliasChoices("deviceId", "deviceUUID", "uuid")
+    )
+    name: str = Field(default="Qubo Device", validation_alias=AliasChoices("name", "deviceName"))
+    model: str = Field(
+        default="", validation_alias=AliasChoices("model", "deviceModel", "aModelNo")
+    )
+    device_type: str = Field(default="", validation_alias=AliasChoices("type", "deviceType"))
+    unit_uuid: str = Field(default="", validation_alias=AliasChoices("unitUUID", "unit_uuid"))
+    entity_uuid: str = Field(default="", validation_alias=AliasChoices("entityUUID", "entity_uuid"))
+    is_online: bool = Field(default=True, validation_alias=AliasChoices("isOnline", "online"))
+    extra_data: dict[str, Any] = Field(
+        default_factory=dict, validation_alias=AliasChoices("extraData", "extra_data")
+    )
 
 
 class DeviceShadow(BaseModel):

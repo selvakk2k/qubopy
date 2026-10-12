@@ -68,10 +68,11 @@ PREFIX_SMART_LIGHT: tuple[str, ...] = ("HLB",)
 PREFIX_SMART_LOCK: tuple[str, ...] = ("HLM", "HLW", "HLR")
 PREFIX_CAMERA: tuple[str, ...] = ("HCP", "HCO", "HCM", "HCI")
 PREFIX_DOORBELL: tuple[str, ...] = ("HCD",)
+PREFIX_DASHCAM: tuple[str, ...] = ("HCA",)
 PREFIX_SECURITY_SENSOR: tuple[str, ...] = ("HDS", "HGS", "HSA")
 PREFIX_CLIMATE_SENSOR: tuple[str, ...] = ("HDT",)
 
-# Deftun BLE Lock GATT UUIDs (P01 hardware revision)
+# P01 Smart Lock Bluetooth LE GATT UUIDs
 GATT_SERVICE_LOCK: str = "0000fee0-0000-1000-8000-00805f9b34fb"
 GATT_CHAR_LOCK_WRITE: str = "0000fee1-0000-1000-8000-00805f9b34fb"
 GATT_CHAR_LOCK_NOTIFY: str = "0000fee2-0000-1000-8000-00805f9b34fb"
