@@ -132,20 +132,123 @@ class QuboClient:
                     )
         return shadows
 
-    async def get_device_shadow(self, device_uuid: str) -> DeviceShadow:
-        """Fetch real-time shadow state for an individual device."""
-        path = PATH_GET_DEVICE_SHADOW.format(sp=self.sp_id, device_uuid=device_uuid)
-        resp = await self.request("GET", path)
-        state_obj = resp.get("state", {}) if isinstance(resp, dict) else {}
-        reported = state_obj.get("reported", resp.get("reported", {}))
-        desired = state_obj.get("desired", resp.get("desired", {}))
+    @staticmethod
+    def _parse_shadow_payload(device_uuid: str, resp: Any) -> DeviceShadow:
+        """Parse raw shadow payload supporting both services array and legacy dicts."""
+        if not isinstance(resp, dict):
+            return DeviceShadow(device_uuid=device_uuid)
+
+        reported: dict[str, Any] = {}
+        desired: dict[str, Any] = {}
+
+        # 1. Parse services array if present (primary Qubo IoT hardware format)
+        services = resp.get("services")
+        if isinstance(services, list):
+            for s in services:
+                if not isinstance(s, dict):
+                    continue
+                svc_name = s.get("service")
+                raw_attrs = s.get("attributes") or {}
+                svc_dict: dict[str, Any] = {}
+                for k, v in raw_attrs.items():
+                    val = v.get("value") if isinstance(v, dict) else v
+                    if val is not None:
+                        svc_dict[k] = val
+                        reported[f"{svc_name}_{k}"] = val
+                if svc_name:
+                    reported[svc_name] = svc_dict
+
+            # Map camera properties
+            cam_func = reported.get("cameraFunction", {})
+            if "state" in cam_func:
+                reported["camera_enabled"] = cam_func["state"] == "enable"
+                reported["privacy_mode"] = cam_func["state"] == "disable"
+
+            night = reported.get("nightModeControl", {})
+            if "nightMode" in night:
+                reported["night_mode"] = night["nightMode"]
+
+            ptz = reported.get("panTiltControl", {})
+            if "horizontalVerticalPostion" in ptz:
+                reported["ptz_position"] = ptz["horizontalVerticalPostion"]
+
+            tracking = reported.get("motionTracking", {})
+            if "enabled" in tracking:
+                reported["motion_tracking"] = str(tracking["enabled"]).lower() in (
+                    "true",
+                    "enable",
+                )
+
+            wifi = reported.get("wifiSettings", {})
+            if "ipAddress" in wifi:
+                reported["ip_address"] = wifi["ipAddress"]
+            if "signalStrength" in wifi:
+                reported["signal_strength"] = wifi["signalStrength"]
+            if "SSIDName" in wifi:
+                reported["wifi_ssid"] = wifi["SSIDName"]
+
+            diag = reported.get("systemDiagnosis", {})
+            if "sdCardStatus" in diag:
+                reported["sd_card_status"] = diag["sdCardStatus"]
+            if "totalExternalStorage" in diag:
+                reported["sd_total_storage"] = diag["totalExternalStorage"]
+            if "availableExternalStorage" in diag:
+                reported["sd_available_storage"] = diag["availableExternalStorage"]
+
+            # Map dashcam properties
+            dash_wifi = reported.get("dashcamWifiSettings", {})
+            if "wifiName" in dash_wifi:
+                reported["dashcam_wifi_name"] = dash_wifi["wifiName"]
+            if "wifiPassword" in dash_wifi:
+                reported["dashcam_wifi_password"] = dash_wifi["wifiPassword"]
+
+            parking = reported.get("parkingConfig", {})
+            if "state" in parking:
+                reported["parking_mode"] = parking["state"] == "enable"
+
+            gps = reported.get("dashcamGpsConfig", {})
+            if "overSpeedLimits" in gps:
+                reported["overspeed_limit"] = gps["overSpeedLimits"]
+            if "speedUnit" in gps:
+                reported["speed_unit"] = gps["speedUnit"]
+
+            rec = reported.get("dashcamRecordingConfig", {})
+            if "audioTrack" in rec:
+                reported["audio_recording"] = rec["audioTrack"] == "enable"
+
+        # 2. Parse legacy state dict if present
+        state_obj = resp.get("state", {})
+        if isinstance(state_obj, dict):
+            rep = state_obj.get("reported", resp.get("reported", {}))
+            des = state_obj.get("desired", resp.get("desired", {}))
+            if isinstance(rep, dict):
+                reported.update(rep)
+            if isinstance(des, dict):
+                desired.update(des)
+
         return DeviceShadow(
             device_uuid=device_uuid,
-            reported=reported if isinstance(reported, dict) else {},
-            desired=desired if isinstance(desired, dict) else {},
-            timestamp=resp.get("timestamp") if isinstance(resp, dict) else None,
-            raw=resp if isinstance(resp, dict) else {},
+            reported=reported,
+            desired=desired,
+            timestamp=resp.get("timestamp"),
+            raw=resp,
         )
+
+    async def get_device_shadow(
+        self,
+        device_uuid: str,
+        unit_uuid: str = "",
+        entity_uuid: str = "",
+    ) -> DeviceShadow:
+        """Fetch real-time shadow state for an individual device."""
+        path = PATH_GET_DEVICE_SHADOW.format(
+            sp=self.sp_id,
+            unit_uuid=unit_uuid or "default",
+            entity_uuid=entity_uuid or "default",
+            device_uuid=device_uuid,
+        )
+        resp = await self.request("GET", path)
+        return self._parse_shadow_payload(device_uuid, resp)
 
     async def get_units(self) -> list[dict[str, Any]]:
         """Fetch all physical units (homes/sites) associated with the account."""
@@ -222,6 +325,24 @@ class QuboClient:
         except Exception as err:
             _LOGGER.debug("RTSP query not supported or failed for %s: %s", device_uuid, err)
             return RtspStreamInfo(device_uuid=device_uuid, is_supported=False)
+
+    async def get_live_stream_url(
+        self,
+        unit_uuid: str,
+        device_uuid: str,
+        device_type: str = "ptzeCamera",
+        quality: str = "high",
+        user_app_id: str | None = None,
+    ) -> str:
+        """Mint a live single-consumer Wowza RTSPS stream URL from Qubo Cloud."""
+        app_id = user_app_id or self.auth.device_id
+        path = (
+            f"/stream-manager/api/v1/sp/{self.sp_id}/stream/unit/{unit_uuid}/device/{device_uuid}"
+            f"?timestamp=NOW&type={quality}&streamSourceCamera=primary&deviceType={device_type or 'ptzeCamera'}"
+        )
+        resp = await self.request("POST", path, json_data={"userAppID": app_id})
+        stream_url = resp.get("streamURL") or ""
+        return str(stream_url)
 
     async def send_command(
         self,

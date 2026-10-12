@@ -61,7 +61,11 @@ class QuboDevice:
 
     async def refresh(self) -> DeviceShadow:
         """Fetch and cache latest device shadow state from cloud."""
-        shadow = await self.client.get_device_shadow(self.device_id)
+        shadow = await self.client.get_device_shadow(
+            device_uuid=self.device_id,
+            unit_uuid=self.unit_id,
+            entity_uuid=self.entity_id,
+        )
         self.update_shadow(shadow)
         return shadow
 
@@ -82,6 +86,19 @@ class QuboDevice:
             device_uuid=self.device_id,
             attributes=attributes,
         )
+
+    async def set_service_attribute(
+        self, service: str, attribute: str, value: Any
+    ) -> dict[str, Any]:
+        """Update a specific service attribute in the device shadow."""
+        payload = {
+            service: {
+                "attributes": {
+                    attribute: str(value),
+                }
+            }
+        }
+        return await self.update_attribute(payload)
 
     def __repr__(self) -> str:
         return f"<{self.__class__.__name__} name={self.name!r} model={self.model!r} id={self.device_id!r}>"

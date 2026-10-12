@@ -191,6 +191,11 @@ def test_dashcam_device(sample_client):
             "recording": True,
             "sdcard_status": "NORMAL",
             "parking_mode": True,
+            "dashcam_wifi_name": "XUV 300_AP",
+            "dashcam_wifi_password": "pass1234",
+            "overspeed_limit": "120",
+            "speed_unit": "km",
+            "audio_recording": True,
         },
     )
     dev = create_device(info, sample_client, shadow)
@@ -199,5 +204,130 @@ def test_dashcam_device(sample_client):
     assert dev.is_recording is True
     assert dev.sd_card_status == "NORMAL"
     assert dev.is_parking_monitoring_on is True
+    assert dev.wifi_ap_ssid == "XUV 300_AP"
+    assert dev.wifi_ap_password == "pass1234"
+    assert dev.overspeed_limit == 120
+    assert dev.speed_unit == "km"
+    assert dev.is_audio_recording_on is True
+
+
+async def test_camera_controls_and_streaming(sample_client):
+    """Test QuboCamera controls, streaming, PTZ, and diagnostics."""
+    info = DeviceModelInfo(
+        uuid="cam-01",
+        deviceId="cam-01",
+        name="Cam 360",
+        model="HCP02A",
+        type="ptzeCamera",
+        unitUUID="u-01",
+        entityUUID="e-01",
+    )
+    shadow = DeviceShadow(
+        device_uuid="cam-01",
+        reported={
+            "camera_enabled": True,
+            "night_mode": "auto",
+            "ptz_position": "0,-181",
+            "motion_tracking": True,
+            "ip_address": "192.168.0.101",
+            "signal_strength": "-45",
+            "wifi_ssid": "HomeWiFi",
+            "sd_card_status": "statusOk",
+            "sd_available_storage": "2130.38",
+            "sd_total_storage": "15174.7",
+        },
+    )
+    cam = QuboCamera(info, sample_client, shadow)
+    assert cam.is_privacy_mode_on is False
+    assert cam.night_mode == "auto"
+    assert cam.pan_tilt_position == "0,-181"
+    assert cam.is_motion_tracking_on is True
+    assert cam.lan_ip_address == "192.168.0.101"
+    assert cam.wifi_rssi == -45
+    assert cam.wifi_ssid == "HomeWiFi"
+    assert cam.sd_card_status == "statusOk"
+    assert cam.sd_storage_free_mb == 2130.38
+    assert cam.sd_storage_total_mb == 15174.7
+
+    # Mock client streaming and shadow attribute update
+    sample_client.get_live_stream_url = AsyncMock(
+        return_value="rtsps://wowza.platform.quboworld.com:443/live/cam-01"
+    )
+    sample_client.update_shadow_attribute = AsyncMock(return_value={"status": "SUCCESS"})
+
+    stream_url = await cam.start_stream()
+    assert "rtsps://wowza.platform.quboworld.com" in stream_url
+
+    await cam.set_privacy_mode(True)
+    sample_client.update_shadow_attribute.assert_called_with(
+        unit_uuid="u-01",
+        entity_uuid="e-01",
+        device_uuid="cam-01",
+        attributes={"cameraFunction": {"attributes": {"state": "disable"}}},
+    )
+
+    await cam.set_night_mode("true")
+    sample_client.update_shadow_attribute.assert_called_with(
+        unit_uuid="u-01",
+        entity_uuid="e-01",
+        device_uuid="cam-01",
+        attributes={"nightModeControl": {"attributes": {"nightMode": "true"}}},
+    )
+
+    await cam.set_motion_tracking(False)
+    sample_client.update_shadow_attribute.assert_called_with(
+        unit_uuid="u-01",
+        entity_uuid="e-01",
+        device_uuid="cam-01",
+        attributes={"motionTracking": {"attributes": {"enabled": "false"}}},
+    )
+
+    await cam.pan_tilt(10, -50)
+    sample_client.update_shadow_attribute.assert_called_with(
+        unit_uuid="u-01",
+        entity_uuid="e-01",
+        device_uuid="cam-01",
+        attributes={"panTiltControl": {"attributes": {"horizontalVerticalPostion": "10,-50"}}},
+    )
+
+
+async def test_dashcam_controls(sample_client):
+    """Test QuboDashcam control methods."""
+    info = DeviceModelInfo(
+        uuid="dash-01",
+        deviceId="dash-01",
+        name="XUV 300 Dashcam",
+        model="HCA08B",
+        type="2kDashCam",
+        unitUUID="u-dash",
+        entityUUID="e-dash",
+    )
+    dash = QuboDashcam(info, sample_client)
+    sample_client.update_shadow_attribute = AsyncMock(return_value={"status": "SUCCESS"})
+
+    await dash.set_parking_monitoring(True)
+    sample_client.update_shadow_attribute.assert_called_with(
+        unit_uuid="u-dash",
+        entity_uuid="e-dash",
+        device_uuid="dash-01",
+        attributes={"parkingConfig": {"attributes": {"state": "enable"}}},
+    )
+
+    await dash.set_overspeed_limit(100)
+    sample_client.update_shadow_attribute.assert_called_with(
+        unit_uuid="u-dash",
+        entity_uuid="e-dash",
+        device_uuid="dash-01",
+        attributes={"dashcamGpsConfig": {"attributes": {"overSpeedLimits": "100"}}},
+    )
+
+    await dash.set_audio_recording(False)
+    sample_client.update_shadow_attribute.assert_called_with(
+        unit_uuid="u-dash",
+        entity_uuid="e-dash",
+        device_uuid="dash-01",
+        attributes={"dashcamRecordingConfig": {"attributes": {"audioTrack": "disable"}}},
+    )
+
 
 

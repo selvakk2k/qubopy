@@ -11,6 +11,8 @@ from typing import Any
 from qubopy.auth import QuboAuth
 from qubopy.client import QuboClient
 from qubopy.const import DEFAULT_DEVICE_ATTRIBUTE
+from qubopy.devices.camera import QuboCamera
+from qubopy.devices.dashcam import QuboDashcam
 from qubopy.devices.lock import QuboLock
 from qubopy.exceptions import QuboError
 
@@ -318,6 +320,84 @@ async def _cmd_unlock(args: argparse.Namespace) -> int:
         return 1
 
 
+async def _cmd_stream(args: argparse.Namespace) -> int:
+    try:
+        client = await _get_authenticated_client(args)
+    except QuboError as err:
+        print(f"Error: {err}", file=sys.stderr)
+        return 1
+
+    device_id = getattr(args, "device_id", None)
+    quality = getattr(args, "quality", "high") or "high"
+    try:
+        async with client:
+            devices = await client.get_all_devices()
+            target = next((d for d in devices if d.device_id == device_id), None)
+            if not target:
+                cameras = [d for d in devices if isinstance(d, QuboCamera)]
+                if len(cameras) == 1 and not device_id:
+                    target = cameras[0]
+                else:
+                    print(f"Error: Camera {device_id} not found in account.", file=sys.stderr)
+                    return 1
+
+            if not isinstance(target, QuboCamera):
+                print(f"Error: Device {target.name} is not a camera.", file=sys.stderr)
+                return 1
+
+            print(f"Requesting live stream for {target.name} ({target.device_id}) ...")
+            stream_url = await target.start_stream(quality=quality)
+            print("\nLive RTSPS Stream URL:")
+            print(stream_url)
+            print("\nYou can open this URL directly in VLC, ffplay, go2rtc, or Home Assistant.")
+            return 0
+    except QuboError as err:
+        print(f"Error: {err}", file=sys.stderr)
+        return 1
+
+
+async def _cmd_dashcam_wifi(args: argparse.Namespace) -> int:
+    try:
+        client = await _get_authenticated_client(args)
+    except QuboError as err:
+        print(f"Error: {err}", file=sys.stderr)
+        return 1
+
+    device_id = getattr(args, "device_id", None)
+    try:
+        async with client:
+            devices = await client.get_all_devices()
+            dashcams = [d for d in devices if isinstance(d, QuboDashcam)]
+            if not dashcams:
+                print("No dashcams found in this account.", file=sys.stderr)
+                return 1
+
+            target = (
+                next((d for d in dashcams if d.device_id == device_id), None)
+                if device_id
+                else dashcams[0]
+            )
+            if not target:
+                print(f"Error: Dashcam {device_id} not found.", file=sys.stderr)
+                return 1
+
+            print(f"Fetching in-car Wi-Fi credentials for {target.name} ...")
+            await target.refresh()
+            print(f"  Dashcam Name   : {target.name}")
+            print(f"  Model          : {target.model}")
+            print(f"  Serial Number  : {target.serial_number}")
+            print(f"  In-Car Wi-Fi AP: {target.wifi_ap_ssid or 'Not set'}")
+            print(f"  WPA2 Password  : {target.wifi_ap_password or 'Not set'}")
+            print(
+                f"  Parking Mode   : {'Enabled' if target.is_parking_monitoring_on else 'Disabled'}"
+            )
+            print(f"  Speed Warning  : {target.overspeed_limit or 'Off'} {target.speed_unit}")
+            return 0
+    except QuboError as err:
+        print(f"Error: {err}", file=sys.stderr)
+        return 1
+
+
 def main() -> None:
     """CLI entry point for qubopy."""
     parser = argparse.ArgumentParser(
@@ -379,6 +459,19 @@ def main() -> None:
     p_unlock.add_argument("--token", help="Override JWT access token")
     p_unlock.add_argument("--user-uuid", help="Override User UUID")
 
+    # stream
+    p_stream = subparsers.add_parser("stream", help="Mint and display live RTSPS stream URL for a camera")
+    p_stream.add_argument("--device-id", help="Camera device UUID (optional if only 1 camera in account)")
+    p_stream.add_argument("--quality", default="high", choices=["high", "low"], help="Stream resolution/quality")
+    p_stream.add_argument("--token", help="Override JWT access token")
+    p_stream.add_argument("--user-uuid", help="Override User UUID")
+
+    # dashcam-wifi
+    p_dwifi = subparsers.add_parser("dashcam-wifi", help="Show in-car Wi-Fi AP credentials for dashcam")
+    p_dwifi.add_argument("--device-id", help="Dashcam device UUID (optional if only 1 dashcam in account)")
+    p_dwifi.add_argument("--token", help="Override JWT access token")
+    p_dwifi.add_argument("--user-uuid", help="Override User UUID")
+
     args = parser.parse_args()
 
     loop = asyncio.new_event_loop()
@@ -396,6 +489,10 @@ def main() -> None:
             sys.exit(loop.run_until_complete(_cmd_export_ble_keys(args)))
         elif args.command == "unlock":
             sys.exit(loop.run_until_complete(_cmd_unlock(args)))
+        elif args.command == "stream":
+            sys.exit(loop.run_until_complete(_cmd_stream(args)))
+        elif args.command == "dashcam-wifi":
+            sys.exit(loop.run_until_complete(_cmd_dashcam_wifi(args)))
     finally:
         loop.close()
 
