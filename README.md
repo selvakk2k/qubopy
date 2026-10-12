@@ -117,13 +117,16 @@ python -m qubopy --help
   * Extracting offline BLE smart lock keys via `qubopy export-ble-keys` for 100% local ESPHome/BLE control without cloud dependence.
   * Exporting in-car Wi-Fi AP SSID and passwords via `qubopy dashcam-wifi` for direct dashcam connectivity.
   * Initial device discovery and stream testing.
-* **Switching to Email**: Accounts originally created via mobile phone in the Qubo mobile app are marked with `accountType: "MOBILE"`. If you require automated 24/7 cloud polling in Home Assistant without hourly SMS re-authentication, register a separate email-based Qubo account.
+* **Switching to Email for 24/7 Automation**: Accounts originally created via mobile phone in the Qubo mobile app are marked with `accountType: "MOBILE"`. If you require automated 24/7 cloud polling in Home Assistant without hourly SMS re-authentication, register a separate email-based Qubo account.
 
 > [!IMPORTANT]
-> **Account Registration Restriction**: Qubo strictly restricts account authentication to the method used during registration.
-> - If you created your Qubo account using a **mobile phone number**, you must authenticate using SMS OTP (`login-phone`).
-> - If you created your Qubo account using an **email and password**, you must authenticate using email (`login`).
-> - Attempting to use email and password credentials on an account registered with a phone number will be rejected by the cloud.
+> **Email Account Registration Guidelines & Constraints**:
+> - **Brand-New Email Address Required**: You **cannot** use an email address that was ever previously added or linked to any mobile phone account. It must be an email address that has **never been associated with any Qubo app or account**.
+> - **Phone Number Re-use is Permitted**: When registering a new email account, the Qubo app will still prompt for a phone number for SMS verification during onboarding. You **can** safely provide the exact same mobile phone number that was used for your mobile account. Login will continue to work seamlessly with your email ID and password!
+> - **Account Type Separation**: Qubo strictly routes authentication based on the registration method:
+>   - Accounts created via **email** authenticate using `qubopy login --email <email>` (continuous session with automatic refresh tokens).
+>   - Accounts created via **phone number** authenticate using `qubopy login-phone --phone <number>` (1-hour session without refresh tokens).
+>   - Attempting to use email and password credentials on an account registered with a phone number will be rejected by the cloud.
 
 > [!WARNING]
 > **Mobile App Session Revocation**: When you sign in via `qubopy`, the active session is visible in the official Qubo mobile app under **Account -> Logged In Devices** with the label `Qubopy` (or your custom `--device-name`).
@@ -498,6 +501,9 @@ ruff check .
 ---
 
 ## Credits & License
+
+### Disclaimer
+`qubopy` is an independent, open-source project and is not affiliated with, endorsed by, or sponsored by Hero Electronix Pvt. Ltd. or Qubo. All trademarks, service marks, and brand names are property of their respective owners. Use of cloud APIs is subject to Qubo's Terms of Service.
 
 ### Author & Contributors
 * **Architecture & Lead Engineering**: [@selvakk2k](https://github.com/selvakk2k)

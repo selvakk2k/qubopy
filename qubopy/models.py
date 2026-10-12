@@ -1,7 +1,7 @@
 """Pydantic data models for qubopy."""
 
 from typing import Any
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
 
 
 class TokenPayload(BaseModel):
@@ -9,8 +9,8 @@ class TokenPayload(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True, extra="ignore")
 
-    access_token: str = Field(alias="accessToken")
-    refresh_token: str | None = Field(default=None, alias="refreshToken")
+    access_token: str = Field(alias="accessToken", repr=False)
+    refresh_token: str | None = Field(default=None, alias="refreshToken", repr=False)
     user_uuid: str = Field(alias="uuid")
     token_type: str = Field(default="accessToken", alias="tokenType")
     expires_at: float | None = None
@@ -59,6 +59,13 @@ class DeviceModelInfo(BaseModel):
         default_factory=dict, validation_alias=AliasChoices("extraData", "extra_data")
     )
 
+    @field_validator("extra_data", mode="before")
+    @classmethod
+    def _coerce_extra_data(cls, val: Any) -> dict[str, Any]:
+        if val is None or not isinstance(val, dict):
+            return {}
+        return val
+
 
 class DeviceShadow(BaseModel):
     """Device shadow state containing live telemetry and attributes."""
@@ -80,10 +87,10 @@ class BleLockCredentials(BaseModel):
     device_uuid: str
     device_name: str
     mac_address: str = Field(description="Physical Bluetooth MAC address (dmac)")
-    auth_key: str = Field(description="Secret BLE handshake authentication key (dbtauthkey)")
-    offline_key: str = Field(description="Offline PIN calculation seed (dbtoffkey)")
+    auth_key: str = Field(repr=False, description="Secret BLE handshake authentication key (dbtauthkey)")
+    offline_key: str = Field(repr=False, description="Offline PIN calculation seed (dbtoffkey)")
     offline_key_flag: str | None = Field(default=None, description="Offline key active flag")
-    admin_pass: str | None = Field(default=None, description="Master administrator passcode")
+    admin_pass: str | None = Field(default=None, repr=False, description="Master administrator passcode")
     admin_flag: str | None = Field(default=None, description="Administrator active flag")
     bluetooth_name: str | None = Field(default=None, description="Advertised BLE name (dbtname)")
     battery_level: int | None = Field(default=None, description="Battery percentage (0-100)")
@@ -100,4 +107,4 @@ class RtspStreamInfo(BaseModel):
     stream_url: str | None = None
     auth_required: bool = False
     username: str | None = None
-    password: str | None = None
+    password: str | None = Field(default=None, repr=False)

@@ -1,7 +1,7 @@
 """Smart camera and doorbell device abstraction (HCP, HCO, HCD series)."""
 
 from typing import Any
-from qubopy.devices.base import QuboDevice
+from qubopy.devices.base import QuboDevice, _as_bool, _first_not_none
 from qubopy.models import RtspStreamInfo
 
 
@@ -13,35 +13,35 @@ class QuboCamera(QuboDevice):
         """Return True if privacy mask / lens shutter is closed or camera disabled."""
         rep = self.reported_state
         if "camera_enabled" in rep:
-            return not bool(rep["camera_enabled"])
-        val = rep.get("privacy") or rep.get("privacy_mode") or rep.get("lens_mask")
-        return bool(val)
+            cam_en = _as_bool(rep["camera_enabled"])
+            if cam_en is not None:
+                return not cam_en
+        val = _first_not_none(rep, "privacy", "privacy_mode", "lens_mask")
+        return bool(_as_bool(val))
 
     @property
     def is_siren_on(self) -> bool:
         """Return True if camera alarm siren is sounding."""
-        rep = self.reported_state
-        val = rep.get("siren") or rep.get("alarm")
-        return bool(val)
+        val = _first_not_none(self.reported_state, "siren", "alarm")
+        return bool(_as_bool(val))
 
     @property
     def is_motion_detected(self) -> bool:
         """Return True if motion sensor is currently active."""
-        rep = self.reported_state
-        val = rep.get("motion") or rep.get("motion_detected")
-        return bool(val)
+        val = _first_not_none(self.reported_state, "motion", "motion_detected")
+        return bool(_as_bool(val))
 
     @property
     def is_person_detected(self) -> bool:
         """Return True if AI person recognition is currently triggered."""
-        rep = self.reported_state
-        val = rep.get("person") or rep.get("person_detected")
-        return bool(val)
+        val = _first_not_none(self.reported_state, "person", "person_detected")
+        return bool(_as_bool(val))
 
     @property
     def is_motion_tracking_on(self) -> bool:
         """Return True if auto motion tracking is enabled."""
-        return bool(self.reported_state.get("motion_tracking"))
+        val = _first_not_none(self.reported_state, "motion_tracking")
+        return bool(_as_bool(val))
 
     @property
     def night_mode(self) -> str:

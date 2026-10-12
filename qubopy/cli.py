@@ -2,6 +2,7 @@
 
 import argparse
 import asyncio
+import getpass
 import json
 import os
 import sys
@@ -19,9 +20,23 @@ from qubopy.exceptions import QuboError
 TOKEN_FILE = Path.home() / ".qubopy_session.json"
 
 
+def _secure_write_text(path: Path, text: str) -> None:
+    """Write text to file with 0o600 permissions."""
+    fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        with open(fd, "w", encoding="utf-8", closefd=True) as f:
+            f.write(text)
+    except Exception:
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+        raise
+
+
 def _save_session(tokens: dict[str, Any]) -> None:
     try:
-        TOKEN_FILE.write_text(json.dumps(tokens, indent=2), encoding="utf-8")
+        _secure_write_text(TOKEN_FILE, json.dumps(tokens, indent=2))
         print(f"Session saved to {TOKEN_FILE}")
     except Exception as err:
         print(f"Warning: Could not save session file: {err}", file=sys.stderr)
@@ -59,10 +74,24 @@ def _handle_cli_error(err: Exception) -> None:
 async def _cmd_login(args: argparse.Namespace) -> int:
     auth = QuboAuth()
     device_name = getattr(args, "device_name", DEFAULT_DEVICE_ATTRIBUTE)
+    password = getattr(args, "password", None) or os.getenv("QUBO_PASSWORD")
+    if not password:
+        if sys.stdin.isatty():
+            try:
+                password = getpass.getpass("Qubo Password: ").strip()
+            except Exception:
+                pass
+        if not password:
+            print(
+                "Error: Password is required. Provide --password, set QUBO_PASSWORD, or enter interactively.",
+                file=sys.stderr,
+            )
+            return 1
+
     print(f"Logging in with email: {args.email} ...")
     try:
         tokens = await auth.login_with_email(
-            args.email, args.password, device_attribute=device_name
+            args.email, password, device_attribute=device_name
         )
         print("Login successful.")
         print(f"User UUID: {tokens.user_uuid}")
@@ -103,7 +132,8 @@ async def _cmd_login_phone(args: argparse.Namespace) -> int:
         print("OTP requested successfully.")
         # Cache pending session for verify-otp fallback
         try:
-            SESSION_TEMP_FILE.write_text(
+            _secure_write_text(
+                SESSION_TEMP_FILE,
                 json.dumps({
                     "phone": phone,
                     "isd": clean_isd,
@@ -111,7 +141,6 @@ async def _cmd_login_phone(args: argparse.Namespace) -> int:
                     "deviceId": auth.device_id,
                     "deviceName": device_name,
                 }),
-                encoding="utf-8",
             )
         except Exception:
             pass
@@ -185,6 +214,7 @@ async def _cmd_verify_otp(args: argparse.Namespace) -> int:
     device_name = getattr(args, "device_name", None)
     profile_idx = getattr(args, "profile_index", None)
     account_uuid = getattr(args, "account_uuid", None)
+    device_id: str | None = None
 
     # Fall back to pending session cache if phone or session_uuid not provided
     if SESSION_TEMP_FILE.exists():
@@ -483,7 +513,11 @@ def main() -> None:
     # login
     p_login = subparsers.add_parser("login", help="Login with email and password")
     p_login.add_argument("--email", required=True, help="Qubo account email")
-    p_login.add_argument("--password", required=True, help="Qubo account password")
+    p_login.add_argument(
+        "--password",
+        default=None,
+        help="Qubo account password (or set QUBO_PASSWORD / enter interactively)",
+    )
     p_login.add_argument(
         "--device-name",
         default=DEFAULT_DEVICE_ATTRIBUTE,

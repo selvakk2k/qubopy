@@ -1,6 +1,7 @@
 """Tests for authentication and token lifecycle."""
 
 import json
+import time
 from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
@@ -259,3 +260,30 @@ async def test_get_headers(sample_auth):
     assert headers["Source-Device-Id"] == sample_auth.device_id
     assert headers["Source"] == "Android"
     await sample_auth.close()
+
+
+def test_auth_rejects_insecure_url():
+    """Verify that insecure HTTP base URLs are rejected."""
+    with pytest.raises(ValueError, match="must use HTTPS"):
+        QuboAuth(base_url="http://insecure-api.quboworld.com")
+
+
+@pytest.mark.asyncio
+async def test_auth_refresh_session_double_checked_lock():
+    """Verify that if tokens were refreshed by another coroutine, no network call is made."""
+    auth = QuboAuth(base_url="http://localhost")
+    # Set fresh token expiring 1 hour from now
+    auth.set_tokens(
+        access_token="fresh-token",
+        refresh_token="valid-refresh",
+        user_uuid="user-999",
+        expires_at=time.time() + 3600,
+    )
+
+    with patch("aiohttp.ClientSession.post") as mock_post:
+        tokens = await auth.refresh_session()
+        assert tokens.access_token == "fresh-token"
+        mock_post.assert_not_called()
+
+    await auth.close()
+

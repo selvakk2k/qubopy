@@ -8,10 +8,12 @@ from qubopy.devices import (
     QuboCamera,
     QuboDashcam,
     QuboLight,
+    QuboLock,
     QuboPlug,
     QuboSensor,
     create_device,
 )
+from qubopy.devices.base import _as_bool, _first_not_none
 from qubopy.models import DeviceModelInfo, DeviceShadow
 
 
@@ -328,6 +330,150 @@ async def test_dashcam_controls(sample_client):
         device_uuid="dash-01",
         attributes={"dashcamRecordingConfig": {"attributes": {"audioTrack": "disable"}}},
     )
+
+
+def test_helpers_first_not_none_and_as_bool():
+    """Verify helpers preserve zero, false, and properly coerce strings/ints."""
+    data = {"zero_val": 0, "false_val": False, "none_val": None, "empty_str": ""}
+    assert _first_not_none(data, "zero_val") == 0
+    assert _first_not_none(data, "false_val") is False
+    assert _first_not_none(data, "none_val", "zero_val") == 0
+    assert _first_not_none(data, "missing", "zero_val") == 0
+    assert _first_not_none(data, "missing1", "missing2") is None
+
+    # _as_bool coercion tests
+    assert _as_bool("false") is False
+    assert _as_bool("False") is False
+    assert _as_bool("0") is False
+    assert _as_bool("disable") is False
+    assert _as_bool("disabled") is False
+    assert _as_bool("off") is False
+    assert _as_bool(False) is False
+    assert _as_bool(0) is False
+
+    assert _as_bool("true") is True
+    assert _as_bool("True") is True
+    assert _as_bool("1") is True
+    assert _as_bool("enable") is True
+    assert _as_bool("enabled") is True
+    assert _as_bool("on") is True
+    assert _as_bool(True) is True
+    assert _as_bool(1) is True
+
+    assert _as_bool(None) is None
+
+
+def test_plug_zero_power_telemetry(sample_client, mock_plug_info):
+    """Bug 3: Zero power and zero energy should not be coerced to None."""
+    shadow = DeviceShadow(
+        device_uuid=mock_plug_info.uuid,
+        reported={
+            "state": "ON",
+            "power": 0,
+            "voltage": 220.0,
+            "current": 0.0,
+            "energy": 0,
+        },
+    )
+    plug = QuboPlug(mock_plug_info, sample_client, shadow)
+    assert plug.power_watts == 0.0
+    assert plug.current == 0.0
+    assert plug.energy_kwh == 0.0
+
+
+def test_lock_is_locked_state(sample_client):
+    """Bug 2: isOpen: False means door is shut/locked, should return True, not None."""
+    info = DeviceModelInfo(
+        uuid="lock-01",
+        deviceId="lock-01",
+        name="Front Door Lock",
+        model="HLM01",
+        type="SmartDoorLock",
+    )
+    # When door is not open (isOpen: False), is_locked is True
+    shadow_closed = DeviceShadow(
+        device_uuid="lock-01",
+        reported={"isOpen": False, "battery": 0},
+    )
+    lock_closed = QuboLock(info, sample_client, shadow_closed)
+    assert lock_closed.is_locked is True
+    assert lock_closed.battery_percent == 0
+
+    # When door is open (isOpen: True), is_locked is False
+    shadow_open = DeviceShadow(
+        device_uuid="lock-01",
+        reported={"isOpen": True, "battery": 75},
+    )
+    lock_open = QuboLock(info, sample_client, shadow_open)
+    assert lock_open.is_locked is False
+    assert lock_open.battery_percent == 75
+
+    # When isOpen is absent from shadow, is_locked is None
+    shadow_empty = DeviceShadow(device_uuid="lock-01", reported={})
+    lock_empty = QuboLock(info, sample_client, shadow_empty)
+    assert lock_empty.is_locked is None
+
+
+def test_purifier_zero_pm25_telemetry(sample_client):
+    """Bug 3: Zero PM2.5 reading should not be coerced to None."""
+    info = DeviceModelInfo(
+        uuid="purifier-1",
+        deviceId="purifier-1",
+        name="Living Room Purifier",
+        model="HPH02",
+        type="AirPurifier",
+    )
+    shadow = DeviceShadow(
+        device_uuid="purifier-1",
+        reported={"pm2_5": 0, "filter_life": 0},
+    )
+    purifier = QuboAirPurifier(info, sample_client, shadow)
+    assert purifier.pm25 == 0
+    assert purifier.filter_life_percent == 0
+
+
+def test_dashcam_audio_recording_safety(sample_client):
+    """Bug 4: Absent audio recording in shadow should return None (not True)."""
+    info = DeviceModelInfo(
+        uuid="dash-01",
+        deviceId="dash-01",
+        name="Dashcam",
+        model="HCA08B",
+        type="2kDashCam",
+    )
+    shadow_empty = DeviceShadow(device_uuid="dash-01", reported={})
+    dash = QuboDashcam(info, sample_client, shadow_empty)
+    assert dash.is_audio_recording_on is None
+
+
+def test_create_device_null_extra_data(sample_client):
+    """Bug 5: extraData: null in JSON must not cause TypeError."""
+    raw = {
+        "uuid": "plug-null",
+        "deviceId": "plug-null",
+        "name": "Smart Plug",
+        "deviceType": "SmartPlug",
+        "deviceModel": "HSP01",
+        "extraData": None,
+    }
+    dev = create_device(DeviceModelInfo.model_validate(raw), sample_client)
+    assert isinstance(dev, QuboPlug)
+    assert dev.name == "Smart Plug"
+
+
+def test_create_device_floodlight_distinction(sample_client):
+    """Bug 6: Floodlight Camera model HCP08 should create QuboCamera, not QuboLight."""
+    raw = {
+        "uuid": "cam-fl-01",
+        "deviceId": "cam-fl-01",
+        "name": "Floodlight Cam",
+        "deviceModel": "HCP08",
+        "deviceType": "FloodlightCamera",
+    }
+    dev = create_device(DeviceModelInfo.model_validate(raw), sample_client)
+    assert isinstance(dev, QuboCamera)
+    assert not isinstance(dev, QuboLight)
+
 
 
 

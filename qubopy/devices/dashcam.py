@@ -1,7 +1,7 @@
 """Automotive dashcam device abstraction (HCA series, Qubo Go / Qubo Pro)."""
 
 from typing import Any
-from qubopy.devices.base import QuboDevice
+from qubopy.devices.base import QuboDevice, _as_bool, _first_not_none
 
 
 class QuboDashcam(QuboDevice):
@@ -15,22 +15,20 @@ class QuboDashcam(QuboDevice):
     @property
     def is_recording(self) -> bool:
         """Return True if dashcam loop recording is currently active."""
-        rep = self.reported_state
-        val = rep.get("recording") or rep.get("isRecording") or rep.get("loop_record")
-        return bool(val)
+        val = _first_not_none(self.reported_state, "recording", "isRecording", "loop_record")
+        return bool(_as_bool(val))
 
     @property
     def sd_card_status(self) -> str | None:
         """Return SD card state (e.g. NORMAL, ERROR, FULL, NOT_INSERTED)."""
-        rep = self.reported_state
-        return rep.get("sdcard_status") or rep.get("sdStatus") or rep.get("sd_card")
+        val = _first_not_none(self.reported_state, "sdcard_status", "sdStatus", "sd_card")
+        return str(val) if val is not None else None
 
     @property
     def is_parking_monitoring_on(self) -> bool:
         """Return True if 24/7 parking surveillance mode is enabled."""
-        rep = self.reported_state
-        val = rep.get("parking_mode") or rep.get("parkingMonitoring")
-        return bool(val)
+        val = _first_not_none(self.reported_state, "parking_mode", "parkingMonitoring")
+        return bool(_as_bool(val))
 
     @property
     def wifi_ap_ssid(self) -> str:
@@ -59,12 +57,10 @@ class QuboDashcam(QuboDevice):
         return str(self.reported_state.get("speed_unit") or "km")
 
     @property
-    def is_audio_recording_on(self) -> bool:
-        """Return True if cabin microphone audio recording is enabled."""
+    def is_audio_recording_on(self) -> bool | None:
+        """Return True if cabin microphone audio recording is enabled, False if disabled, None if unknown."""
         val = self.reported_state.get("audio_recording")
-        if val is not None:
-            return bool(val)
-        return True
+        return _as_bool(val)
 
     async def set_parking_monitoring(self, enabled: bool) -> dict[str, Any]:
         """Toggle 24/7 parking surveillance mode."""

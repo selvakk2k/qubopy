@@ -1,7 +1,7 @@
 """Smart plug device abstraction (HSP series)."""
 
 from typing import Any
-from qubopy.devices.base import QuboDevice
+from qubopy.devices.base import QuboDevice, _as_bool, _first_not_none
 
 
 class QuboPlug(QuboDevice):
@@ -10,21 +10,13 @@ class QuboPlug(QuboDevice):
     @property
     def is_on(self) -> bool:
         """Return True if plug relay is closed / switched on."""
-        rep = self.reported_state
-        state = rep.get("state") or rep.get("switch") or rep.get("power_state")
-        if isinstance(state, str):
-            return state.upper() in ("ON", "1", "TRUE")
-        if isinstance(state, (int, float)):
-            return state == 1
-        if isinstance(state, bool):
-            return state
-        return False
+        state = _first_not_none(self.reported_state, "state", "switch", "power_state")
+        return bool(_as_bool(state))
 
     @property
     def power_watts(self) -> float | None:
         """Return active power consumption in Watts."""
-        rep = self.reported_state
-        val = rep.get("power") or rep.get("active_power") or rep.get("watts")
+        val = _first_not_none(self.reported_state, "power", "active_power", "watts")
         try:
             return float(val) if val is not None else None
         except (ValueError, TypeError):
@@ -33,8 +25,7 @@ class QuboPlug(QuboDevice):
     @property
     def voltage(self) -> float | None:
         """Return line voltage in Volts."""
-        rep = self.reported_state
-        val = rep.get("voltage") or rep.get("volts")
+        val = _first_not_none(self.reported_state, "voltage", "volts")
         try:
             return float(val) if val is not None else None
         except (ValueError, TypeError):
@@ -43,8 +34,7 @@ class QuboPlug(QuboDevice):
     @property
     def current(self) -> float | None:
         """Return line current in Amperes."""
-        rep = self.reported_state
-        val = rep.get("current") or rep.get("amps")
+        val = _first_not_none(self.reported_state, "current", "amps")
         try:
             return float(val) if val is not None else None
         except (ValueError, TypeError):
@@ -53,8 +43,7 @@ class QuboPlug(QuboDevice):
     @property
     def energy_kwh(self) -> float | None:
         """Return cumulative energy consumption in kilowatt-hours."""
-        rep = self.reported_state
-        val = rep.get("energy") or rep.get("total_energy") or rep.get("kwh")
+        val = _first_not_none(self.reported_state, "energy", "total_energy", "kwh")
         try:
             return float(val) if val is not None else None
         except (ValueError, TypeError):

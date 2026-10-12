@@ -1,6 +1,6 @@
 """Environmental and security sensor device abstraction (HDS, HGS, HSA, HDT)."""
 
-from qubopy.devices.base import QuboDevice
+from qubopy.devices.base import QuboDevice, _as_bool, _first_not_none
 
 
 class QuboSensor(QuboDevice):
@@ -9,27 +9,25 @@ class QuboSensor(QuboDevice):
     @property
     def is_contact_open(self) -> bool | None:
         """Return True if door/window contact sensor is open (HDS series)."""
-        rep = self.reported_state
-        val = rep.get("contact") or rep.get("door_state") or rep.get("open")
-        return bool(val) if val is not None else None
+        val = _first_not_none(self.reported_state, "contact", "door_state", "open")
+        return _as_bool(val)
 
     @property
     def is_gas_alarm(self) -> bool:
         """Return True if flammable gas leak is detected (HGS series)."""
-        rep = self.reported_state
-        return bool(rep.get("gas_alarm") or rep.get("gas_detected"))
+        val = _first_not_none(self.reported_state, "gas_alarm", "gas_detected")
+        return bool(_as_bool(val))
 
     @property
     def is_smoke_alarm(self) -> bool:
         """Return True if smoke alarm is active (HSA series)."""
-        rep = self.reported_state
-        return bool(rep.get("smoke_alarm") or rep.get("smoke_detected"))
+        val = _first_not_none(self.reported_state, "smoke_alarm", "smoke_detected")
+        return bool(_as_bool(val))
 
     @property
     def temperature_celsius(self) -> float | None:
         """Return temperature in degrees Celsius (HDT series)."""
-        rep = self.reported_state
-        val = rep.get("temperature") or rep.get("temp")
+        val = _first_not_none(self.reported_state, "temperature", "temp")
         try:
             return float(val) if val is not None else None
         except (ValueError, TypeError):
@@ -38,8 +36,7 @@ class QuboSensor(QuboDevice):
     @property
     def humidity_percent(self) -> float | None:
         """Return relative humidity percentage (HDT series)."""
-        rep = self.reported_state
-        val = rep.get("humidity") or rep.get("rh")
+        val = _first_not_none(self.reported_state, "humidity", "rh")
         try:
             return float(val) if val is not None else None
         except (ValueError, TypeError):
@@ -48,8 +45,7 @@ class QuboSensor(QuboDevice):
     @property
     def battery_percent(self) -> int | None:
         """Return sensor battery level (0-100)."""
-        rep = self.reported_state
-        val = rep.get("battery") or rep.get("power")
+        val = _first_not_none(self.reported_state, "battery", "power")
         try:
             return int(val) if val is not None else None
         except (ValueError, TypeError):

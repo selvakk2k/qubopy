@@ -1,7 +1,7 @@
 """Smart lock device abstraction and local BLE key enabler (HLM, HLW, HLR)."""
 
 from typing import Any
-from qubopy.devices.base import QuboDevice
+from qubopy.devices.base import QuboDevice, _as_bool, _first_not_none
 from qubopy.exceptions import QuboCommandError, QuboKeyExtractionError
 from qubopy.models import BleLockCredentials
 
@@ -12,11 +12,9 @@ class QuboLock(QuboDevice):
     @property
     def gateway_id(self) -> str | None:
         """Return paired in-home gateway device UUID if present in metadata."""
-        return (
-            self.info.extra_data.get("gatewayUUID")
-            or self.info.extra_data.get("gatewayId")
-            or self.shadow.reported.get("gatewayUUID")
-        )
+        return _first_not_none(
+            self.info.extra_data, "gatewayUUID", "gatewayId"
+        ) or _first_not_none(self.shadow.reported, "gatewayUUID", "gatewayId")
 
     @property
     def is_gateway_accessible(self) -> bool:
@@ -28,20 +26,20 @@ class QuboLock(QuboDevice):
     def is_locked(self) -> bool | None:
         """Return True if door is locked, False if unlocked, None if unknown."""
         rep = self.reported_state
-        is_open = rep.get("isOpen") or rep.get("open")
-        if is_open is not None:
-            return not bool(is_open)
-        locked = rep.get("locked") or rep.get("isLocked")
-        if locked is not None:
-            return bool(locked)
+        is_open_val = _as_bool(_first_not_none(rep, "isOpen", "open"))
+        if is_open_val is not None:
+            return not is_open_val
+        locked_val = _as_bool(_first_not_none(rep, "locked", "isLocked"))
+        if locked_val is not None:
+            return locked_val
         return None
 
     @property
     def battery_percent(self) -> int | None:
         """Return lock battery percentage (0-100)."""
-        rep = self.reported_state
-        extra = self.info.extra_data
-        val = rep.get("dpower") or rep.get("battery") or extra.get("dpower")
+        val = _first_not_none(self.reported_state, "dpower", "battery")
+        if val is None:
+            val = _first_not_none(self.info.extra_data, "dpower", "battery")
         try:
             return int(val) if val is not None else None
         except (ValueError, TypeError):
@@ -111,7 +109,7 @@ class QuboLock(QuboDevice):
             admin_flag=str(admin_flag) if admin_flag is not None else None,
             bluetooth_name=str(bt_name) if bt_name is not None else None,
             battery_level=power,
-            is_open=bool(is_open_val) if is_open_val is not None else None,
+            is_open=_as_bool(is_open_val),
         )
 
     async def unlock(self, gateway_uuid: str | None = None) -> dict[str, Any]:

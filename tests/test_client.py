@@ -1,7 +1,7 @@
 """Tests for QuboClient REST operations and discovery."""
 
 import json
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 import pytest
 
 from qubopy.client import QuboClient
@@ -176,5 +176,70 @@ async def test_lock_gateway_auto_association(sample_client):
         assert lock.is_gateway_accessible is True
 
     await sample_client.close()
+
+
+@pytest.mark.asyncio
+async def test_client_401_retry_with_refresh(sample_client):
+    """Verify that a 401 status triggers token refresh and retries the request once."""
+    sample_client.auth.set_tokens(
+        access_token="expired_tok",
+        refresh_token="valid_refresh_tok",
+        user_uuid="user-1",
+    )
+
+    call_count = 0
+
+    def mock_handler(method, url, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            return MockClientResponse(401, json.dumps({"error": "Expired"}))
+        return MockClientResponse(200, json.dumps({"success": True}))
+
+    with patch.object(sample_client.auth, "refresh_session", new_callable=AsyncMock) as mock_refresh:
+        mock_refresh.return_value = sample_client.auth.set_tokens(
+            access_token="new_tok",
+            refresh_token="valid_refresh_tok",
+            user_uuid="user-1",
+        )
+        with patch("aiohttp.ClientSession.request", side_effect=mock_handler):
+            res = await sample_client.request("GET", "/test/endpoint")
+            assert res == {"success": True}
+            assert call_count == 2
+            mock_refresh.assert_called_once()
+
+    await sample_client.close()
+
+
+@pytest.mark.asyncio
+async def test_client_ssrf_rejection(sample_client):
+    """Verify that requests to unexpected hosts are blocked."""
+    with pytest.raises(ValueError, match="Invalid request URL"):
+        await sample_client.request("GET", "https://malicious-external-api.com/steal-token")
+
+    await sample_client.close()
+
+
+@pytest.mark.asyncio
+async def test_client_get_units_reraises_auth_error(sample_client):
+    """Verify that get_units does not mask authentication failures as an empty list."""
+    mock_resp = MockClientResponse(401, json.dumps({"error": "Unauthorized"}))
+    with patch("aiohttp.ClientSession.request", return_value=mock_resp):
+        with pytest.raises(QuboAuthError):
+            await sample_client.get_units()
+
+    await sample_client.close()
+
+
+@pytest.mark.asyncio
+async def test_client_get_devices_for_unit_reraises_auth_error(sample_client):
+    """Verify that get_devices_for_unit does not mask authentication failures as an empty list."""
+    mock_resp = MockClientResponse(401, json.dumps({"error": "Unauthorized"}))
+    with patch("aiohttp.ClientSession.request", return_value=mock_resp):
+        with pytest.raises(QuboAuthError):
+            await sample_client.get_devices_for_unit("unit-123")
+
+    await sample_client.close()
+
 
 

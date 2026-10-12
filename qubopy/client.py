@@ -15,6 +15,7 @@ from qubopy.const import (
     PATH_GET_DEVICES,
     PATH_RTSP_SUPPORT,
     PATH_SEND_COMMAND,
+    PATH_START_STREAM,
     PATH_UNIT_DEVICES,
     PATH_UNITS,
     PATH_UPDATE_SHADOW_ATTRIBUTE,
@@ -54,7 +55,9 @@ class QuboClient:
     async def _get_session(self) -> aiohttp.ClientSession:
         """Return active aiohttp session."""
         if self._session is None or self._session.closed:
-            self._session = aiohttp.ClientSession()
+            self._session = aiohttp.ClientSession(
+                timeout=aiohttp.ClientTimeout(total=30)
+            )
             self._owns_session = True
         return self._session
 
@@ -64,9 +67,14 @@ class QuboClient:
         path: str,
         json_data: dict[str, Any] | None = None,
         params: dict[str, Any] | None = None,
+        retry: bool = False,
     ) -> Any:
         """Execute an authenticated request against the Qubo REST gateway."""
         url = path if path.startswith("http") else f"{self.base_url}{path}"
+        if not url.startswith(self.base_url):
+            raise ValueError(
+                f"Invalid request URL: target host must match base_url ({self.base_url})"
+            )
         headers = await self.auth.get_headers()
         session = await self._get_session()
 
@@ -75,6 +83,20 @@ class QuboClient:
                 method, url, json=json_data, params=params, headers=headers
             ) as response:
                 text = await response.text()
+                if response.status == 401 and not retry:
+                    if self.auth.tokens and self.auth.tokens.refresh_token:
+                        _LOGGER.info("Received 401 from Qubo API; attempting token refresh...")
+                        try:
+                            await self.auth.refresh_session()
+                            return await self.request(
+                                method,
+                                path,
+                                json_data=json_data,
+                                params=params,
+                                retry=True,
+                            )
+                        except Exception as refresh_err:
+                            _LOGGER.warning("Token refresh after 401 failed: %s", refresh_err)
                 if response.status in (401, 403):
                     raise QuboAuthError(
                         f"Authentication rejected by Qubo API (HTTP {response.status}): {text}"
@@ -255,6 +277,8 @@ class QuboClient:
         path = PATH_UNITS.format(sp=self.sp_id)
         try:
             resp = await self.request("GET", path)
+        except QuboAuthError:
+            raise
         except Exception as err:
             _LOGGER.warning("Could not fetch units: %s", err)
             return []
@@ -273,6 +297,8 @@ class QuboClient:
         path = PATH_UNIT_DEVICES.format(sp=self.sp_id, unit_uuid=unit_uuid)
         try:
             resp = await self.request("GET", path)
+        except QuboAuthError:
+            raise
         except Exception as err:
             _LOGGER.warning("Could not fetch devices for unit %s: %s", unit_uuid, err)
             return []
@@ -336,11 +362,18 @@ class QuboClient:
     ) -> str:
         """Mint a live single-consumer Wowza RTSPS stream URL from Qubo Cloud."""
         app_id = user_app_id or self.auth.device_id
-        path = (
-            f"/stream-manager/api/v1/sp/{self.sp_id}/stream/unit/{unit_uuid}/device/{device_uuid}"
-            f"?timestamp=NOW&type={quality}&streamSourceCamera=primary&deviceType={device_type or 'ptzeCamera'}"
+        path = PATH_START_STREAM.format(
+            sp=self.sp_id, unit_uuid=unit_uuid, device_uuid=device_uuid
         )
-        resp = await self.request("POST", path, json_data={"userAppID": app_id})
+        params = {
+            "timestamp": "NOW",
+            "type": quality,
+            "streamSourceCamera": "primary",
+            "deviceType": device_type or "ptzeCamera",
+        }
+        resp = await self.request(
+            "POST", path, json_data={"userAppID": app_id}, params=params
+        )
         stream_url = resp.get("streamURL") or ""
         return str(stream_url)
 
@@ -437,7 +470,8 @@ class QuboClient:
                 seen_uuids.add(dev_uuid)
 
                 # Copy extraData and bind gateway if lock lacks one
-                extra = dict(d.get("extraData", d))
+                extra_raw = d.get("extraData")
+                extra = dict(extra_raw) if isinstance(extra_raw, dict) else dict(d)
                 dev_type = d.get("deviceType") or d.get("type") or ""
                 dev_model = d.get("deviceModel") or d.get("model") or d.get("aModelNo") or ""
                 dev_name = d.get("deviceName") or d.get("name") or f"Qubo {dev_uuid[:6]}"

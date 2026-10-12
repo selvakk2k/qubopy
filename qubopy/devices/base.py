@@ -7,6 +7,33 @@ if TYPE_CHECKING:
     from qubopy.client import QuboClient
 
 
+def _first_not_none(mapping: dict[str, Any] | None, *keys: str) -> Any:
+    """Return the value of the first key in mapping whose value is not None."""
+    if not mapping or not isinstance(mapping, dict):
+        return None
+    for k in keys:
+        if k in mapping and mapping[k] is not None:
+            return mapping[k]
+    return None
+
+
+def _as_bool(val: Any) -> bool | None:
+    """Coerce boolean, integer, or string representations into bool or None."""
+    if val is None:
+        return None
+    if isinstance(val, bool):
+        return val
+    if isinstance(val, (int, float)):
+        return bool(val)
+    if isinstance(val, str):
+        v = val.strip().lower()
+        if v in ("true", "1", "yes", "on", "enable", "enabled", "open"):
+            return True
+        if v in ("false", "0", "no", "off", "disable", "disabled", "close", "closed"):
+            return False
+    return None
+
+
 class QuboDevice:
     """Base class for all Qubo appliances and peripherals."""
 

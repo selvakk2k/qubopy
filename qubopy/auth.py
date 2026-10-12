@@ -4,6 +4,7 @@ import asyncio
 import base64
 import json
 import logging
+import os
 import time
 import uuid
 from pathlib import Path
@@ -36,7 +37,16 @@ def _get_or_create_device_id() -> str:
             if saved_id:
                 return saved_id
         new_id = str(uuid.uuid4())
-        DEVICE_ID_FILE.write_text(new_id, encoding="utf-8")
+        fd = os.open(str(DEVICE_ID_FILE), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        try:
+            with open(fd, "w", encoding="utf-8", closefd=True) as f:
+                f.write(new_id)
+        except Exception:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+            raise
         return new_id
     except Exception:
         return str(uuid.uuid4())
@@ -70,6 +80,12 @@ class QuboAuth:
         device_id: str | None = None,
         session: aiohttp.ClientSession | None = None,
     ) -> None:
+        if not (
+            base_url.startswith("https://")
+            or base_url.startswith("http://localhost")
+            or base_url.startswith("http://127.0.0.1")
+        ):
+            raise ValueError(f"Insecure or invalid base_url: must use HTTPS ({base_url})")
         self.base_url = base_url.rstrip("/")
         self.sp_id = sp_id
         self.app_id = app_id
@@ -120,7 +136,9 @@ class QuboAuth:
     async def _get_session(self) -> aiohttp.ClientSession:
         """Return an active aiohttp session."""
         if self._session is None or self._session.closed:
-            self._session = aiohttp.ClientSession()
+            self._session = aiohttp.ClientSession(
+                timeout=aiohttp.ClientTimeout(total=30)
+            )
             self._owns_session = True
         return self._session
 
@@ -158,7 +176,7 @@ class QuboAuth:
                 if isinstance(data, list) and data:
                     data = data[0]
                 if not isinstance(data, dict):
-                    raise QuboAuthError(f"Unexpected response format from login: {data}")
+                    raise QuboAuthError(f"Unexpected response format from login: {type(data).__name__}")
         except aiohttp.ClientError as err:
             raise QuboConnectionError(f"Network error during login: {err}") from err
         except json.JSONDecodeError as err:
@@ -167,7 +185,7 @@ class QuboAuth:
         access_token = data.get("accessToken") or data.get("token")
         user_uuid = data.get("uuid") or data.get("userUUID") or data.get("userId")
         if not access_token or not user_uuid:
-            raise QuboAuthError(f"Missing required token fields in login response: {data}")
+            raise QuboAuthError("Missing required token fields in login response")
 
         refresh_token = data.get("refreshToken")
         expires_at = _decode_jwt_expiry(access_token) or (time.time() + 86400)
@@ -314,7 +332,7 @@ class QuboAuth:
             or selected_profile.get("userId")
         )
         if not access_token or not user_uuid:
-            raise QuboAuthError(f"Missing tokens in OTP response: {selected_profile}")
+            raise QuboAuthError("Missing tokens in OTP response")
 
         refresh_token = selected_profile.get("refreshToken")
         expires_at = _decode_jwt_expiry(access_token) or (time.time() + 86400)
@@ -332,6 +350,10 @@ class QuboAuth:
         async with self._refresh_lock:
             if not self._tokens or not self._tokens.refresh_token:
                 raise QuboAuthError("No refresh token available to renew session")
+
+            # Double-checked lock: if another coroutine just refreshed while we waited for lock
+            if self._tokens.expires_at and (self._tokens.expires_at - time.time()) > 300:
+                return self._tokens
 
             url = f"{self.base_url}{PATH_AUTH_REFRESH.format(sp=self.sp_id, user_uuid=self._tokens.user_uuid)}"
             headers = {

@@ -1,7 +1,7 @@
 """Smart lighting device abstraction (HLB series)."""
 
 from typing import Any
-from qubopy.devices.base import QuboDevice
+from qubopy.devices.base import QuboDevice, _as_bool, _first_not_none
 
 
 class QuboLight(QuboDevice):
@@ -10,21 +10,13 @@ class QuboLight(QuboDevice):
     @property
     def is_on(self) -> bool:
         """Return True if light is illuminated."""
-        rep = self.reported_state
-        state = rep.get("state") or rep.get("switch") or rep.get("power")
-        if isinstance(state, str):
-            return state.upper() in ("ON", "1", "TRUE")
-        if isinstance(state, (int, float)):
-            return state == 1
-        if isinstance(state, bool):
-            return state
-        return False
+        state = _first_not_none(self.reported_state, "state", "switch", "power")
+        return bool(_as_bool(state))
 
     @property
     def brightness(self) -> int | None:
         """Return brightness level (0 to 100)."""
-        rep = self.reported_state
-        val = rep.get("brightness") or rep.get("dimmer")
+        val = _first_not_none(self.reported_state, "brightness", "dimmer")
         try:
             return int(val) if val is not None else None
         except (ValueError, TypeError):
@@ -33,8 +25,7 @@ class QuboLight(QuboDevice):
     @property
     def color_temp(self) -> int | None:
         """Return color temperature value."""
-        rep = self.reported_state
-        val = rep.get("color_temp") or rep.get("cct") or rep.get("temperature")
+        val = _first_not_none(self.reported_state, "color_temp", "cct", "temperature")
         try:
             return int(val) if val is not None else None
         except (ValueError, TypeError):
