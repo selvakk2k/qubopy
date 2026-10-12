@@ -2,21 +2,26 @@
 
 import json
 import time
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
+
 import pytest
 
-from qubopy.auth import QuboAuth, _decode_jwt_expiry
-from qubopy.exceptions import QuboAuthError, QuboConnectionError
+from qubopy.auth import QuboAuth
+from qubopy.exceptions import QuboAuthError
 
 
 class MockClientResponse:
     """Mock aiohttp ClientResponse context manager."""
 
-    def __init__(self, status: int, text_data: str) -> None:
+    def __init__(self, status: int, text_data: str, delay: float = 0.0) -> None:
         self.status = status
         self._text_data = text_data
+        self.delay = delay
 
     async def __aenter__(self):
+        if self.delay > 0:
+            import asyncio
+            await asyncio.sleep(self.delay)
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
@@ -65,9 +70,11 @@ async def test_email_login_invalid_credentials():
     auth = QuboAuth()
     mock_resp = MockClientResponse(401, "Invalid email or password")
 
-    with patch("aiohttp.ClientSession.post", return_value=mock_resp):
-        with pytest.raises(QuboAuthError, match="Email login failed"):
-            await auth.login_with_email("user@example.com", "wrong")
+    with (
+        patch("aiohttp.ClientSession.post", return_value=mock_resp),
+        pytest.raises(QuboAuthError, match="Email login failed"),
+    ):
+        await auth.login_with_email("user@example.com", "wrong")
 
     await auth.close()
 
@@ -83,7 +90,7 @@ async def test_phone_otp_flow():
         assert req_res["status"] == "OTP_SENT"
         assert req_res["uuid"] == "session-123"
         # Assert headers and payload
-        args, kwargs = mock_post.call_args
+        _, kwargs = mock_post.call_args
         assert kwargs["headers"]["App-Id"] == "com.hero.iot"
         assert kwargs["headers"]["Source"] == "USER"
         assert kwargs["headers"]["Source-Device-Id"] == "test-device-uuid"
@@ -100,7 +107,7 @@ async def test_phone_otp_flow():
         tokens = await auth.verify_phone_otp("9876543210", "1234", isd_code="+91")
         assert tokens.user_uuid == "user-888"
         assert tokens.access_token == otp_payload["accessToken"]
-        args, kwargs = mock_post.call_args
+        _args, kwargs = mock_post.call_args
         assert kwargs["headers"]["App-Id"] == "com.hero.iot"
         assert kwargs["headers"]["Source"] == "USER"
         assert kwargs["json"]["uuid"] == "session-123"
@@ -199,19 +206,23 @@ async def test_phone_otp_select_by_index_and_uuid():
 
     # Out of range index raises QuboAuthError
     mock_resp3 = MockClientResponse(200, json.dumps(multi_account_payload))
-    with patch("aiohttp.ClientSession.post", return_value=mock_resp3):
-        with pytest.raises(QuboAuthError, match="Profile index 5 out of range"):
-            await auth.verify_phone_otp(
-                "9876543210", "123456", session_uuid="session-multi", profile_index=5
-            )
+    with (
+        patch("aiohttp.ClientSession.post", return_value=mock_resp3),
+        pytest.raises(QuboAuthError, match="Profile index 5 out of range"),
+    ):
+        await auth.verify_phone_otp(
+            "9876543210", "123456", session_uuid="session-multi", profile_index=5
+        )
 
     # Unknown UUID raises QuboAuthError
     mock_resp4 = MockClientResponse(200, json.dumps(multi_account_payload))
-    with patch("aiohttp.ClientSession.post", return_value=mock_resp4):
-        with pytest.raises(QuboAuthError, match="Account UUID 'unknown-uuid' not found"):
-            await auth.verify_phone_otp(
-                "9876543210", "123456", session_uuid="session-multi", account_uuid="unknown-uuid"
-            )
+    with (
+        patch("aiohttp.ClientSession.post", return_value=mock_resp4),
+        pytest.raises(QuboAuthError, match="Account UUID 'unknown-uuid' not found"),
+    ):
+        await auth.verify_phone_otp(
+            "9876543210", "123456", session_uuid="session-multi", account_uuid="unknown-uuid"
+        )
 
     await auth.close()
 
@@ -263,9 +274,27 @@ async def test_get_headers(sample_auth):
 
 
 def test_auth_rejects_insecure_url():
-    """Verify that insecure HTTP base URLs are rejected."""
-    with pytest.raises(ValueError, match="must use HTTPS"):
+    """Verify that insecure HTTP base URLs, lookalike hosts, and userinfo are rejected."""
+    with pytest.raises(ValueError, match="Insecure base_url"):
         QuboAuth(base_url="http://insecure-api.quboworld.com")
+
+    with pytest.raises(ValueError, match="Insecure base_url"):
+        QuboAuth(base_url="http://localhost.evil.com")
+
+    with pytest.raises(ValueError, match="Insecure base_url: userinfo"):
+        QuboAuth(base_url="https://user:pass@srvcapp.platform.quboworld.com")
+
+
+def test_auth_allows_valid_urls():
+    """Verify that HTTPS and loopback HTTP testing URLs are accepted."""
+    a1 = QuboAuth(base_url="https://srvcapp.platform.quboworld.com:443")
+    assert a1.base_url == "https://srvcapp.platform.quboworld.com:443"
+
+    a2 = QuboAuth(base_url="http://localhost:8080")
+    assert a2.base_url == "http://localhost:8080"
+
+    a3 = QuboAuth(base_url="http://127.0.0.1:8000")
+    assert a3.base_url == "http://127.0.0.1:8000"
 
 
 @pytest.mark.asyncio
@@ -281,9 +310,55 @@ async def test_auth_refresh_session_double_checked_lock():
     )
 
     with patch("aiohttp.ClientSession.post") as mock_post:
+        # Proactive path
         tokens = await auth.refresh_session()
         assert tokens.access_token == "fresh-token"
         mock_post.assert_not_called()
+
+        # Failed token mismatch (another coroutine already refreshed)
+        tokens = await auth.refresh_session(failed_token="old-expired-token")
+        assert tokens.access_token == "fresh-token"
+        mock_post.assert_not_called()
+
+    await auth.close()
+
+
+@pytest.mark.asyncio
+async def test_auth_get_valid_access_token_expired_failure():
+    """When token is expired and refresh fails, get_valid_access_token raises QuboAuthError."""
+    auth = QuboAuth(base_url="http://localhost")
+    # Token expired 10 seconds ago
+    auth.set_tokens(
+        access_token="expired-tok",
+        refresh_token="invalid-ref",
+        user_uuid="u-1",
+        expires_at=time.time() - 10,
+    )
+
+    with (
+        patch.object(auth, "refresh_session", side_effect=Exception("Network down")),
+        pytest.raises(QuboAuthError, match="Session expired and automatic token renewal failed"),
+    ):
+        await auth.get_valid_access_token()
+
+    await auth.close()
+
+
+@pytest.mark.asyncio
+async def test_auth_get_valid_access_token_near_expiry_warning():
+    """When token is near expiry (< 300s) but not yet expired, failed refresh logs warning and returns token."""
+    auth = QuboAuth(base_url="http://localhost")
+    # Token expires 100 seconds in the future
+    auth.set_tokens(
+        access_token="valid-tok",
+        refresh_token="ref",
+        user_uuid="u-1",
+        expires_at=time.time() + 100,
+    )
+
+    with patch.object(auth, "refresh_session", side_effect=Exception("Temporary glitch")):
+        token = await auth.get_valid_access_token()
+        assert token == "valid-tok"
 
     await auth.close()
 

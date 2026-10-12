@@ -1,10 +1,12 @@
-"""Base device abstraction for Qubo hardware."""
-
+import logging
 from typing import TYPE_CHECKING, Any
+
 from qubopy.models import DeviceModelInfo, DeviceShadow
 
 if TYPE_CHECKING:
     from qubopy.client import QuboClient
+
+_LOGGER = logging.getLogger(__name__)
 
 
 def _first_not_none(mapping: dict[str, Any] | None, *keys: str) -> Any:
@@ -19,18 +21,22 @@ def _first_not_none(mapping: dict[str, Any] | None, *keys: str) -> Any:
 
 def _as_bool(val: Any) -> bool | None:
     """Coerce boolean, integer, or string representations into bool or None."""
-    if val is None:
-        return None
-    if isinstance(val, bool):
+    if val is None or isinstance(val, bool):
         return val
     if isinstance(val, (int, float)):
-        return bool(val)
+        if val in (1, 1.0):
+            return True
+        if val in (0, 0.0):
+            return False
+        return None
     if isinstance(val, str):
         v = val.strip().lower()
-        if v in ("true", "1", "yes", "on", "enable", "enabled", "open"):
+        if v in ("true", "1", "yes", "on", "enable", "enabled"):
             return True
-        if v in ("false", "0", "no", "off", "disable", "disabled", "close", "closed"):
+        if v in ("false", "0", "no", "off", "disable", "disabled"):
             return False
+        _LOGGER.debug("Unrecognized boolean string value: %r", val)
+        return None
     return None
 
 

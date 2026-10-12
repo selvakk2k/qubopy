@@ -1,6 +1,7 @@
 """Tests for typed device abstractions."""
 
 from unittest.mock import AsyncMock
+
 import pytest
 
 from qubopy.devices import (
@@ -12,6 +13,7 @@ from qubopy.devices import (
     QuboPlug,
     QuboSensor,
     create_device,
+    is_gateway_device,
 )
 from qubopy.devices.base import _as_bool, _first_not_none
 from qubopy.models import DeviceModelInfo, DeviceShadow
@@ -473,6 +475,104 @@ def test_create_device_floodlight_distinction(sample_client):
     dev = create_device(DeviceModelInfo.model_validate(raw), sample_client)
     assert isinstance(dev, QuboCamera)
     assert not isinstance(dev, QuboLight)
+
+
+def test_as_bool_coercion(caplog):
+    """Test _as_bool strictly coerces 0/1, strings, logs debug on unrecognized values."""
+    assert _as_bool(True) is True
+    assert _as_bool(False) is False
+    assert _as_bool(None) is None
+
+    # Exact numbers 0 and 1
+    assert _as_bool(1) is True
+    assert _as_bool(1.0) is True
+    assert _as_bool(0) is False
+    assert _as_bool(0.0) is False
+
+    # Numbers outside 0 and 1 must return None
+    assert _as_bool(2) is None
+    assert _as_bool(-1) is None
+    assert _as_bool(100) is None
+    assert _as_bool(0.5) is None
+
+    # Boolean strings
+    assert _as_bool("true") is True
+    assert _as_bool("1") is True
+    assert _as_bool("yes") is True
+    assert _as_bool("on") is True
+    assert _as_bool("enable") is True
+    assert _as_bool("false") is False
+    assert _as_bool("0") is False
+    assert _as_bool("no") is False
+    assert _as_bool("off") is False
+    assert _as_bool("disable") is False
+
+    # Strings "open" and "close" removed from general _as_bool (handled by locks)
+    import logging
+    with caplog.at_level(logging.DEBUG):
+        assert _as_bool("open") is None
+        assert _as_bool("close") is None
+        assert _as_bool("random_string") is None
+        assert "Unrecognized boolean string value: 'open'" in caplog.text
+
+
+def test_lock_is_locked_string_states(sample_client):
+    """Test QuboLock handles string states like 'open', 'opened', 'close', 'closed'."""
+    info = DeviceModelInfo(
+        uuid="lock-02",
+        deviceId="lock-02",
+        name="Front Door Lock",
+        model="HLM01",
+        type="SmartDoorLock",
+    )
+
+    shadow_open_str = DeviceShadow(
+        device_uuid="lock-02",
+        reported={"isOpen": "open"},
+    )
+    lock_open = QuboLock(info, sample_client, shadow_open_str)
+    assert lock_open.is_locked is False
+
+    shadow_opened_str = DeviceShadow(
+        device_uuid="lock-02",
+        reported={"isOpen": "opened"},
+    )
+    lock_opened = QuboLock(info, sample_client, shadow_opened_str)
+    assert lock_opened.is_locked is False
+
+    shadow_close_str = DeviceShadow(
+        device_uuid="lock-02",
+        reported={"isOpen": "close"},
+    )
+    lock_close = QuboLock(info, sample_client, shadow_close_str)
+    assert lock_close.is_locked is True
+
+    shadow_closed_str = DeviceShadow(
+        device_uuid="lock-02",
+        reported={"isOpen": "closed"},
+    )
+    lock_closed = QuboLock(info, sample_client, shadow_closed_str)
+    assert lock_closed.is_locked is True
+
+
+def test_is_gateway_device_matching():
+    """Verify gateway identification strictly matches cameras/doorbells and rejects dashcams."""
+    # Dashcam models or types must be rejected
+    assert not is_gateway_device({"deviceModel": "HCA01", "deviceType": "DashCam"})
+    assert not is_gateway_device({"deviceModel": "HCA08B", "deviceType": "2kDashCam"})
+
+    # Cameras and doorbells must match
+    assert is_gateway_device({"deviceModel": "HCP01", "deviceType": "SmartCamera"})
+    assert is_gateway_device({"deviceModel": "HCD01", "deviceType": "Doorbell"})
+    assert is_gateway_device({"deviceModel": "HCB01", "deviceType": "OutdoorCamera"})
+    assert is_gateway_device(DeviceModelInfo(uuid="gw1", model="HDB01", deviceType="Doorbell"))
+
+    # Non-gateway peripherals must be rejected
+    assert not is_gateway_device({"deviceModel": "HSP01", "deviceType": "SmartPlug"})
+    assert not is_gateway_device({"deviceModel": "HPH02", "deviceType": "AirPurifier"})
+    assert not is_gateway_device({"deviceModel": "HLB01", "deviceType": "SmartBulb"})
+    assert not is_gateway_device({"deviceModel": "HLM01", "deviceType": "SmartDoorLock"})
+
 
 
 

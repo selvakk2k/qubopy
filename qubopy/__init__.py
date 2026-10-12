@@ -1,5 +1,7 @@
 """Qubo Python Client Library & BLE Enabler."""
 
+from importlib.metadata import PackageNotFoundError, version
+
 from qubopy.auth import QuboAuth
 from qubopy.client import QuboClient
 from qubopy.devices import (
@@ -30,31 +32,34 @@ from qubopy.models import (
     Unit,
 )
 
-__version__ = "0.1.0-alpha.1"
+try:
+    __version__ = version("qubopy")
+except PackageNotFoundError:
+    __version__ = "0.1.0-alpha.1"
 
 __all__ = [
-    "__version__",
-    "QuboAuth",
-    "QuboClient",
-    "QuboDevice",
-    "QuboPlug",
-    "QuboAirPurifier",
-    "QuboLight",
-    "QuboLock",
-    "QuboCamera",
-    "QuboSensor",
-    "create_device",
-    "QuboError",
-    "QuboAuthError",
-    "QuboConnectionError",
-    "QuboDeviceNotFoundError",
-    "QuboCommandError",
-    "QuboKeyExtractionError",
-    "TokenPayload",
-    "Unit",
-    "Entity",
+    "BleLockCredentials",
     "DeviceModelInfo",
     "DeviceShadow",
-    "BleLockCredentials",
+    "Entity",
+    "QuboAirPurifier",
+    "QuboAuth",
+    "QuboAuthError",
+    "QuboCamera",
+    "QuboClient",
+    "QuboCommandError",
+    "QuboConnectionError",
+    "QuboDevice",
+    "QuboDeviceNotFoundError",
+    "QuboError",
+    "QuboKeyExtractionError",
+    "QuboLight",
+    "QuboLock",
+    "QuboPlug",
+    "QuboSensor",
     "RtspStreamInfo",
+    "TokenPayload",
+    "Unit",
+    "__version__",
+    "create_device",
 ]

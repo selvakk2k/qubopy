@@ -338,7 +338,7 @@ async def _cmd_list_devices(args: argparse.Namespace) -> int:
                 online_str = "Yes" if d.is_online else "No"
                 type_str = d.__class__.__name__
                 if isinstance(d, QuboLock):
-                    type_str = f"Lock (Gateway)" if d.is_gateway_accessible else "Lock (BLE Only)"
+                    type_str = "Lock (Gateway)" if d.is_gateway_accessible else "Lock (BLE Only)"
                 print(f"{d.name:<25} {d.model:<12} {type_str:<18} {online_str:<8} {d.device_id:<36}")
             print()
             return 0
@@ -361,7 +361,7 @@ async def _cmd_export_ble_keys(args: argparse.Namespace) -> int:
             locks = [d for d in devices if isinstance(d, QuboLock)]
 
             if args.device_id:
-                locks = [l for l in locks if l.device_id == args.device_id]
+                locks = [lock_dev for lock_dev in locks if lock_dev.device_id == args.device_id]
                 if not locks:
                     print(f"No smart lock found with ID: {args.device_id}", file=sys.stderr)
                     return 1

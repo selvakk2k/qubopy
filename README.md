@@ -132,6 +132,9 @@ python -m qubopy --help
 > **Mobile App Session Revocation**: When you sign in via `qubopy`, the active session is visible in the official Qubo mobile app under **Account -> Logged In Devices** with the label `Qubopy` (or your custom `--device-name`).
 > Tapping **[Logout]** next to this entry in the mobile app immediately revokes the session on Qubo servers, requiring you to re-authenticate.
 
+> [!NOTE]
+> **Operating System File Permissions**: On Linux and macOS, session cache files (`~/.qubopy_session.json`, `~/.qubopy_otp_pending.json`) and device identifiers are created with POSIX `0o600` mode (read/write by owner only). Because Windows NTFS does not enforce POSIX permission bits, Windows users should ensure these files remain within their private user profile directory (`%USERPROFILE%`).
+
 ---
 
 ## Quick Start
@@ -316,6 +319,9 @@ async def unlock_door(lock: QuboLock):
 
 > [!CAUTION]
 > **Untested / Experimental**: The BLE lock credential extraction and GATT definitions below were derived from reverse-engineering the official mobile application. They have **not been tested or verified on physical smart lock hardware**. Testing and contributions from community members with physical locks are welcome.
+
+> [!WARNING]
+> **Cryptographic Key Security**: The extracted Bluetooth authentication key (`dbtauthkey`), offline key seed (`dbtoffkey`), and master admin passcode grant physical authorization to actuate the lock bolt. Treat these exported credentials with the same confidentiality as physical keys. Never commit exported credentials to public source control or paste them into unredacted issue reports.
 
 Extract offline cryptographic keys for experimental local use with Home Assistant Bluetooth Proxies or ESPHome:
 

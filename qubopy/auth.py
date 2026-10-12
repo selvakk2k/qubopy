@@ -9,6 +9,7 @@ import time
 import uuid
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 import aiohttp
 
@@ -48,7 +49,10 @@ def _get_or_create_device_id() -> str:
                 pass
             raise
         return new_id
-    except Exception:
+    except Exception as err:
+        _LOGGER.debug(
+            "Could not persist or read device ID (%s); generating ephemeral UUID", err
+        )
         return str(uuid.uuid4())
 
 
@@ -64,8 +68,8 @@ def _decode_jwt_expiry(token: str) -> float | None:
         payload = json.loads(payload_bytes.decode("utf-8"))
         if "exp" in payload and isinstance(payload["exp"], (int, float)):
             return float(payload["exp"])
-    except Exception:
-        pass
+    except Exception as err:
+        _LOGGER.debug("Could not parse JWT expiry from token: %s", err)
     return None
 
 
@@ -80,12 +84,20 @@ class QuboAuth:
         device_id: str | None = None,
         session: aiohttp.ClientSession | None = None,
     ) -> None:
-        if not (
-            base_url.startswith("https://")
-            or base_url.startswith("http://localhost")
-            or base_url.startswith("http://127.0.0.1")
-        ):
-            raise ValueError(f"Insecure or invalid base_url: must use HTTPS ({base_url})")
+        parsed = urlsplit(base_url)
+        if "@" in (parsed.netloc or ""):
+            raise ValueError("Insecure base_url: userinfo is not permitted")
+        if parsed.scheme == "https":
+            if not parsed.hostname:
+                raise ValueError(f"Invalid base_url: missing hostname in {base_url}")
+        elif parsed.scheme == "http":
+            allowed_local = ("localhost", "127.0.0.1", "::1")
+            if parsed.hostname not in allowed_local:
+                raise ValueError(
+                    f"Insecure base_url: HTTP is only permitted for local testing ({allowed_local}), got {parsed.hostname}"
+                )
+        else:
+            raise ValueError(f"Insecure or unsupported scheme in base_url: {parsed.scheme}")
         self.base_url = base_url.rstrip("/")
         self.sp_id = sp_id
         self.app_id = app_id
@@ -169,9 +181,8 @@ class QuboAuth:
             async with session.post(url, json=payload, headers=headers) as response:
                 text = await response.text()
                 if response.status != 200:
-                    raise QuboAuthError(
-                        f"Email login failed (HTTP {response.status}): {text}"
-                    )
+                    _LOGGER.debug("Email login error response (HTTP %s): %s", response.status, text[:200])
+                    raise QuboAuthError(f"Email login failed (HTTP {response.status})")
                 data = json.loads(text)
                 if isinstance(data, list) and data:
                     data = data[0]
@@ -224,9 +235,8 @@ class QuboAuth:
             async with session.post(url, json=payload, headers=headers) as response:
                 text = await response.text()
                 if response.status != 200:
-                    raise QuboAuthError(
-                        f"OTP request failed (HTTP {response.status}): {text}"
-                    )
+                    _LOGGER.debug("OTP request error response (HTTP %s): %s", response.status, text[:200])
+                    raise QuboAuthError(f"OTP request failed (HTTP {response.status})")
                 data = json.loads(text)
                 self._login_uuid = data.get("uuid")
                 return data
@@ -269,9 +279,8 @@ class QuboAuth:
             async with session.post(url, json=payload, headers=headers) as response:
                 text = await response.text()
                 if response.status != 200:
-                    raise QuboAuthError(
-                        f"OTP verification failed (HTTP {response.status}): {text}"
-                    )
+                    _LOGGER.debug("OTP verification error response (HTTP %s): %s", response.status, text[:200])
+                    raise QuboAuthError(f"OTP verification failed (HTTP {response.status})")
                 data = json.loads(text)
                 if isinstance(data, dict):
                     return [data]
@@ -345,14 +354,19 @@ class QuboAuth:
         )
         return self._tokens
 
-    async def refresh_session(self) -> TokenPayload:
+    async def refresh_session(self, failed_token: str | None = None) -> TokenPayload:
         """Renew the JWT access token using the stored refresh token."""
         async with self._refresh_lock:
             if not self._tokens or not self._tokens.refresh_token:
                 raise QuboAuthError("No refresh token available to renew session")
 
-            # Double-checked lock: if another coroutine just refreshed while we waited for lock
-            if self._tokens.expires_at and (self._tokens.expires_at - time.time()) > 300:
+            # Concurrency / Double-checked locking
+            if failed_token is not None:
+                # If another coroutine already refreshed the token while we waited for the lock
+                if self._tokens.access_token != failed_token:
+                    return self._tokens
+            elif self._tokens.expires_at and (self._tokens.expires_at - time.time()) > 300:
+                # Proactive background refresh path: token still has > 5 min validity
                 return self._tokens
 
             url = f"{self.base_url}{PATH_AUTH_REFRESH.format(sp=self.sp_id, user_uuid=self._tokens.user_uuid)}"
@@ -376,12 +390,19 @@ class QuboAuth:
                 async with session.post(url, json=payload, headers=headers) as response:
                     text = await response.text()
                     if response.status != 200:
+                        _LOGGER.debug(
+                            "Session refresh error response (HTTP %s): %s",
+                            response.status,
+                            text[:200],
+                        )
                         raise QuboAuthError(
-                            f"Session refresh failed (HTTP {response.status}): {text}"
+                            f"Session refresh failed (HTTP {response.status})"
                         )
                     data = json.loads(text)
             except aiohttp.ClientError as err:
                 raise QuboConnectionError(f"Network error during token refresh: {err}") from err
+            except json.JSONDecodeError as err:
+                raise QuboAuthError(f"Invalid JSON returned by server during refresh: {err}") from err
 
             new_access_token = data.get("accessToken") or self._tokens.access_token
             new_refresh_token = data.get("refreshToken") or self._tokens.refresh_token
@@ -400,13 +421,21 @@ class QuboAuth:
         if not self._tokens:
             raise QuboAuthError("Authentication required: No tokens present")
 
+        now = time.time()
         # If token expires in less than 5 minutes (300 seconds), refresh it
-        if self._tokens.expires_at and (self._tokens.expires_at - time.time()) < 300:
-            if self._tokens.refresh_token:
-                try:
-                    await self.refresh_session()
-                except Exception as err:
-                    _LOGGER.warning("Proactive token refresh failed: %s", err)
+        if (
+            self._tokens.expires_at
+            and (self._tokens.expires_at - now) < 300
+            and self._tokens.refresh_token
+        ):
+            try:
+                await self.refresh_session()
+            except Exception as err:
+                if self._tokens.expires_at <= now:
+                    raise QuboAuthError(
+                        f"Session expired and automatic token renewal failed: {err}"
+                    ) from err
+                _LOGGER.warning("Proactive token refresh near expiration failed: %s", err)
 
         return self._tokens.access_token
 

@@ -1,8 +1,8 @@
 """Tests for qubopy CLI and security protections."""
 
 import argparse
-from pathlib import Path
 from unittest.mock import AsyncMock, patch
+
 import pytest
 
 from qubopy.cli import _cmd_verify_otp, _secure_write_text
@@ -23,24 +23,26 @@ async def test_verify_otp_without_pending_file_no_unbound_error(tmp_path):
         account_uuid=None,
     )
 
-    with patch("qubopy.cli.SESSION_TEMP_FILE", non_existent):
-        with patch("qubopy.cli.QuboAuth") as mock_auth_cls:
-            mock_auth = mock_auth_cls.return_value
-            mock_auth.get_phone_otp_profiles = AsyncMock(
-                return_value=[{"name": "User", "uuid": "u-1"}]
+    with (
+        patch("qubopy.cli.SESSION_TEMP_FILE", non_existent),
+        patch("qubopy.cli.QuboAuth") as mock_auth_cls,
+    ):
+        mock_auth = mock_auth_cls.return_value
+        mock_auth.get_phone_otp_profiles = AsyncMock(
+            return_value=[{"name": "User", "uuid": "u-1"}]
+        )
+        mock_auth.verify_phone_otp = AsyncMock(
+            return_value=TokenPayload(
+                accessToken="tok",
+                refreshToken=None,
+                uuid="u-1",
             )
-            mock_auth.verify_phone_otp = AsyncMock(
-                return_value=TokenPayload(
-                    accessToken="tok",
-                    refreshToken=None,
-                    uuid="u-1",
-                )
-            )
-            mock_auth.close = AsyncMock()
+        )
+        mock_auth.close = AsyncMock()
 
-            with patch("qubopy.cli._save_session"):
-                code = await _cmd_verify_otp(args)
-                assert code == 0
+        with patch("qubopy.cli._save_session"):
+            code = await _cmd_verify_otp(args)
+            assert code == 0
 
 
 def test_models_repr_conceals_secrets():

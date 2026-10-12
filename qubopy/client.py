@@ -3,8 +3,10 @@
 import json
 import logging
 from typing import Any
+from urllib.parse import urlsplit
 
 import aiohttp
+from typing_extensions import Self
 
 from qubopy.auth import QuboAuth
 from qubopy.const import (
@@ -25,14 +27,11 @@ from qubopy.exceptions import (
     QuboAuthError,
     QuboCommandError,
     QuboConnectionError,
-    QuboDeviceNotFoundError,
 )
 from qubopy.models import (
     DeviceModelInfo,
     DeviceShadow,
-    Entity,
     RtspStreamInfo,
-    Unit,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -70,54 +69,92 @@ class QuboClient:
         retry: bool = False,
     ) -> Any:
         """Execute an authenticated request against the Qubo REST gateway."""
-        url = path if path.startswith("http") else f"{self.base_url}{path}"
-        if not url.startswith(self.base_url):
-            raise ValueError(
-                f"Invalid request URL: target host must match base_url ({self.base_url})"
-            )
+        parsed = urlsplit(path)
+        if parsed.scheme or parsed.netloc:
+            base_parsed = urlsplit(self.base_url)
+            if (
+                "@" in (parsed.netloc or "")
+                or parsed.scheme != base_parsed.scheme
+                or parsed.netloc != base_parsed.netloc
+            ):
+                raise ValueError(
+                    f"Invalid request URL: target host ({parsed.netloc}) must match base_url ({base_parsed.netloc})"
+                )
+            url = path
+        else:
+            clean_path = path if path.startswith("/") else f"/{path}"
+            url = f"{self.base_url}{clean_path}"
+
         headers = await self.auth.get_headers()
         session = await self._get_session()
 
+        auth_header = headers.get("Authorization", "")
+        used_token = auth_header.removeprefix("Bearer ").strip() or (
+            self.auth.tokens.access_token if self.auth.tokens else None
+        )
+
+        should_refresh = False
         try:
             async with session.request(
                 method, url, json=json_data, params=params, headers=headers
             ) as response:
                 text = await response.text()
-                if response.status == 401 and not retry:
-                    if self.auth.tokens and self.auth.tokens.refresh_token:
-                        _LOGGER.info("Received 401 from Qubo API; attempting token refresh...")
-                        try:
-                            await self.auth.refresh_session()
-                            return await self.request(
-                                method,
-                                path,
-                                json_data=json_data,
-                                params=params,
-                                retry=True,
-                            )
-                        except Exception as refresh_err:
-                            _LOGGER.warning("Token refresh after 401 failed: %s", refresh_err)
-                if response.status in (401, 403):
+                if (
+                    response.status == 401
+                    and not retry
+                    and self.auth.tokens
+                    and self.auth.tokens.refresh_token
+                ):
+                    should_refresh = True
+                elif response.status in (401, 403):
+                    _LOGGER.debug(
+                        "Authentication rejected response (HTTP %s): %s",
+                        response.status,
+                        text[:200],
+                    )
                     raise QuboAuthError(
-                        f"Authentication rejected by Qubo API (HTTP {response.status}): {text}"
+                        f"Authentication rejected by Qubo API (HTTP {response.status})"
                     )
-                if response.status not in (200, 201, 204):
+                elif response.status not in (200, 201, 204):
+                    _LOGGER.debug(
+                        "API error response (HTTP %s): %s", response.status, text[:200]
+                    )
                     raise QuboCommandError(
-                        f"Qubo API error (HTTP {response.status}) on {method} {url}: {text}"
+                        f"Qubo API error (HTTP {response.status}) on {method} {url}"
                     )
-                if not text or response.status == 204:
+                elif not text or response.status == 204:
                     return {}
-                return json.loads(text)
+                else:
+                    return json.loads(text)
         except aiohttp.ClientError as err:
             raise QuboConnectionError(f"HTTP connection failed: {err}") from err
         except json.JSONDecodeError as err:
             raise QuboCommandError(f"Failed to parse server response as JSON: {err}") from err
+
+        if should_refresh:
+            _LOGGER.info("Received 401 from Qubo API; attempting token refresh...")
+            try:
+                await self.auth.refresh_session(failed_token=used_token)
+            except Exception as refresh_err:
+                raise QuboAuthError(
+                    f"Token refresh failed after HTTP 401: {refresh_err}"
+                ) from refresh_err
+
+            return await self.request(
+                method,
+                path,
+                json_data=json_data,
+                params=params,
+                retry=True,
+            )
 
     async def get_all_shadows(self) -> dict[str, DeviceShadow]:
         """Fetch all device shadow states in bulk."""
         path = PATH_GET_ALL_SHADOWS.format(sp=self.sp_id)
         try:
             resp = await self.request("GET", path)
+        except QuboAuthError:
+            raise
         except Exception as err:
             _LOGGER.warning("Could not fetch bulk shadows: %s", err)
             return {}
@@ -480,9 +517,21 @@ class QuboClient:
                 is_lock = "LOCK" in dev_type_str or any(
                     dev_model_str.startswith(p) for p in ("HLM", "HLW", "HLR")
                 )
-                if is_lock and unit_gateways:
-                    if not extra.get("gatewayUUID") and not extra.get("gatewayId"):
-                        extra["gatewayUUID"] = unit_gateways[0]
+                if (
+                    is_lock
+                    and unit_gateways
+                    and not extra.get("gatewayUUID")
+                    and not extra.get("gatewayId")
+                ):
+                    if len(unit_gateways) > 1:
+                        _LOGGER.info(
+                            "Multiple gateways found in unit %s (%s); auto-binding lock %s to first gateway %s",
+                            unit_uuid,
+                            unit_gateways,
+                            dev_uuid,
+                            unit_gateways[0],
+                        )
+                    extra["gatewayUUID"] = unit_gateways[0]
 
                 # Parse shadow if embedded in device descriptor
                 shadow_obj = None
@@ -521,8 +570,13 @@ class QuboClient:
             self._session = None
         await self.auth.close()
 
-    async def __aenter__(self) -> "QuboClient":
+    async def __aenter__(self) -> Self:
         return self
 
-    async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: Any,
+    ) -> None:
         await self.close()

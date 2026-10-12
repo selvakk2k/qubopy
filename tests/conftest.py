@@ -1,9 +1,10 @@
 """Shared pytest fixtures and mock utilities."""
 
 import pytest
+
 from qubopy.auth import QuboAuth
 from qubopy.client import QuboClient
-from qubopy.models import DeviceModelInfo, DeviceShadow
+from qubopy.models import DeviceModelInfo
 
 
 @pytest.fixture

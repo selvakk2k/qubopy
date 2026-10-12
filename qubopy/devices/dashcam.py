@@ -1,6 +1,7 @@
 """Automotive dashcam device abstraction (HCA series, Qubo Go / Qubo Pro)."""
 
 from typing import Any
+
 from qubopy.devices.base import QuboDevice, _as_bool, _first_not_none
 
 

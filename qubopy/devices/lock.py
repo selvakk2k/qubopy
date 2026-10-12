@@ -1,9 +1,11 @@
-"""Smart lock device abstraction and local BLE key enabler (HLM, HLW, HLR)."""
-
+import logging
 from typing import Any
+
 from qubopy.devices.base import QuboDevice, _as_bool, _first_not_none
 from qubopy.exceptions import QuboCommandError, QuboKeyExtractionError
 from qubopy.models import BleLockCredentials
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class QuboLock(QuboDevice):
@@ -26,9 +28,15 @@ class QuboLock(QuboDevice):
     def is_locked(self) -> bool | None:
         """Return True if door is locked, False if unlocked, None if unknown."""
         rep = self.reported_state
-        is_open_val = _as_bool(_first_not_none(rep, "isOpen", "open"))
-        if is_open_val is not None:
-            return not is_open_val
+        raw_open = _first_not_none(rep, "isOpen", "open")
+        if raw_open is not None:
+            if isinstance(raw_open, str) and raw_open.strip().lower() in ("open", "opened"):
+                return False
+            if isinstance(raw_open, str) and raw_open.strip().lower() in ("close", "closed"):
+                return True
+            is_open_val = _as_bool(raw_open)
+            if is_open_val is not None:
+                return not is_open_val
         locked_val = _as_bool(_first_not_none(rep, "locked", "isLocked"))
         if locked_val is not None:
             return locked_val
@@ -56,9 +64,13 @@ class QuboLock(QuboDevice):
                     return src[k]
                 # Also check nested bean if present
                 for nested_key in ("P01DeviceBean", "deviceBean", "bean", "bleInfo"):
-                    if nested_key in src and isinstance(src[nested_key], dict):
-                        if k in src[nested_key] and src[nested_key][k] is not None:
-                            return src[nested_key][k]
+                    if (
+                        nested_key in src
+                        and isinstance(src[nested_key], dict)
+                        and k in src[nested_key]
+                        and src[nested_key][k] is not None
+                    ):
+                        return src[nested_key][k]
         return None
 
     async def get_ble_lock_keys(self) -> BleLockCredentials:
@@ -79,8 +91,8 @@ class QuboLock(QuboDevice):
             # Attempt one explicit refresh if possible
             try:
                 await self.refresh()
-            except Exception:
-                pass
+            except Exception as err:
+                _LOGGER.debug("Could not refresh lock prior to BLE key extraction: %s", err)
             mac = self._extract_field("dmac", "mac", "deviceMac", "bleMac")
             auth_key = self._extract_field("dbtauthkey", "authKey", "btauthkey")
             offline_key = self._extract_field("dbtoffkey", "offKey", "btoffkey")

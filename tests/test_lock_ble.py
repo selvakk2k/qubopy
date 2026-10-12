@@ -1,7 +1,9 @@
 """Tests for QuboLock BLE key extraction and gateway unlock."""
 
 from unittest.mock import AsyncMock
+
 import pytest
+
 from qubopy.devices.lock import QuboLock
 from qubopy.exceptions import QuboCommandError, QuboKeyExtractionError
 from qubopy.models import DeviceModelInfo, DeviceShadow

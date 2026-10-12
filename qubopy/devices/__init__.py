@@ -1,6 +1,7 @@
 """Device abstractions and factory router."""
 
 from typing import TYPE_CHECKING
+
 from qubopy.const import (
     PREFIX_AIR_PURIFIER,
     PREFIX_CAMERA,
@@ -26,13 +27,13 @@ if TYPE_CHECKING:
     from qubopy.client import QuboClient
 
 __all__ = [
-    "QuboDevice",
-    "QuboPlug",
     "QuboAirPurifier",
-    "QuboLight",
-    "QuboLock",
     "QuboCamera",
     "QuboDashcam",
+    "QuboDevice",
+    "QuboLight",
+    "QuboLock",
+    "QuboPlug",
     "QuboSensor",
     "create_device",
     "is_gateway_device",
@@ -59,9 +60,7 @@ def is_gateway_device(device_data: dict | DeviceModelInfo) -> bool:
 
     if any(m_upper.startswith(p) for p in PREFIX_DOORBELL + PREFIX_CAMERA):
         return True
-    if any(k in t_lower for k in ("doorbell", "camera", "cam", "gateway", "hhl")):
-        return True
-    return False
+    return bool(any(k in t_lower for k in ("doorbell", "camera", "gateway")))
 
 
 

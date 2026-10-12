@@ -1,6 +1,7 @@
 """Smart camera and doorbell device abstraction (HCP, HCO, HCD series)."""
 
 from typing import Any
+
 from qubopy.devices.base import QuboDevice, _as_bool, _first_not_none
 from qubopy.models import RtspStreamInfo
 

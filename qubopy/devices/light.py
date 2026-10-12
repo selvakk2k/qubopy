@@ -1,6 +1,7 @@
 """Smart lighting device abstraction (HLB series)."""
 
 from typing import Any
+
 from qubopy.devices.base import QuboDevice, _as_bool, _first_not_none
 
 
