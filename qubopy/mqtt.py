@@ -365,7 +365,7 @@ class QuboMqttListener:
         try:
             await asyncio.wait_for(self._connect_future, timeout=connect_timeout)
             self._is_running = True
-        except TimeoutError as err:
+        except (TimeoutError, asyncio.TimeoutError) as err:
             await self.stop()
             raise QuboConnectionError(
                 f"Timed out waiting for Qubo MQTT broker connection ({connect_timeout}s)"
