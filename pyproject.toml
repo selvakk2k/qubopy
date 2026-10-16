@@ -30,10 +30,14 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+mqtt = [
+    "paho-mqtt>=2.0.0",
+]
 dev = [
     "pytest>=7.0.0",
     "pytest-asyncio>=0.21.0",
     "ruff>=0.1.0",
+    "paho-mqtt>=2.0.0",
 ]
 
 [project.scripts]

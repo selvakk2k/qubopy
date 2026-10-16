@@ -31,6 +31,7 @@ from qubopy.models import (
     TokenPayload,
     Unit,
 )
+from qubopy.mqtt import QuboMqttEvent, QuboMqttListener
 
 try:
     __version__ = version("qubopy")
@@ -55,6 +56,8 @@ __all__ = [
     "QuboKeyExtractionError",
     "QuboLight",
     "QuboLock",
+    "QuboMqttEvent",
+    "QuboMqttListener",
     "QuboPlug",
     "QuboSensor",
     "RtspStreamInfo",

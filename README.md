@@ -730,41 +730,48 @@ The Qubo MQTT broker authenticates using your account's JWT bearer access token:
 * **Password**: The active JWT access token (`auth.tokens.access_token`).
 * **Client ID**: A unique client string (e.g. `f"qubopy_{uuid.uuid4().hex[:8]}"`).
 
-#### Python Example: Connecting to the Live MQTT Broker
+#### Real-Time Telemetry Listener (`QuboMqttListener`)
+
+The library includes a dedicated `QuboMqttListener` that manages background TLS connectivity, safe Client ID isolation, initial REST state seeding, and asynchronous event callbacks.
+
+To install with MQTT support:
+
+```bash
+pip install "qubopy[mqtt]"
+```
+
+##### Python Example: Real-Time Event Streaming
 
 ```python
 import asyncio
-import ssl
-import uuid
-import paho.mqtt.client as mqtt
-from qubopy import QuboAuth
+from qubopy import QuboAuth, QuboClient, QuboMqttEvent, QuboMqttListener
 
 async def main():
     auth = QuboAuth()
-    tokens = await auth.login_with_email("<email>", "<password>")
+    await auth.login_with_email("<email>", "<password>")
 
-    # Generate a distinct client ID to avoid disconnecting your phone app
-    client_id = f"qubopy_{uuid.uuid4().hex[:8]}"
+    async with QuboClient(auth) as client:
+        # Initialize the listener (auto-discovers unit_uuid and generates an isolated client_id)
+        listener = QuboMqttListener(client)
 
-    def on_connect(client, userdata, flags, rc, properties=None):
-        print(f"Connected to Qubo MQTT broker (rc={rc})")
-        client.subscribe(f"/monitor/<unit_uuid>/#")
+        # Optional: Seed initial baseline states from REST shadow v2 before streaming deltas
+        devices = await listener.seed_state()
+        for dev in devices:
+            print(f"Initial State: {dev.name} -> {dev.reported_state}")
 
-    def on_message(client, userdata, msg):
-        print(f"Received telemetry on {msg.topic}: {msg.payload.decode('utf-8')}")
+        # Register callback for real-time telemetry events
+        def handle_event(event: QuboMqttEvent):
+            print(f"[{event.service}] {event.device_uuid} -> {event.event_name}: {event.parameters}")
 
-    mqttc = mqtt.Client(
-        mqtt.CallbackAPIVersion.VERSION2,
-        client_id=client_id,
-        clean_session=True,
-    )
-    mqttc.username_pw_set(username=tokens.user_uuid, password=tokens.access_token)
-    mqttc.tls_set_context(ssl.create_default_context())
-    mqttc.on_connect = on_connect
-    mqttc.on_message = on_message
+        # Optional service and device filtering
+        listener.add_event_listener(handle_event, service="panTiltControl")
+        listener.add_event_listener(handle_event, service="lockControl")
 
-    mqttc.connect("mqtt.platform.quboworld.com", 8883, 60)
-    mqttc.loop_start()
+        # Run listener as an async context manager
+        async with listener:
+            print("Listening for real-time Qubo events... Press Ctrl+C to stop.")
+            while True:
+                await asyncio.sleep(1)
 
 asyncio.run(main())
 ```
@@ -777,6 +784,9 @@ Once authenticated over TLS, clients subscribe to specific event streams:
 | :--- | :--- | :--- | :--- |
 | **Unit Monitor / Inbound Telemetry** | `/monitor/{unit_uuid}/#` | `✅ Hardware Verified` | Real-time device event telemetry, motion events, camera position changes, and client heartbeats. |
 | **Device Control Channel** | `/control/{unit_uuid}/{device_uuid}/{service_name}` | `✅ Hardware Verified` | Command publication channel for cloud-relayed actuation and attribute updates. |
+
+> [!WARNING]
+> **Security Advisory: Avoid Subscribing to `/control` in Production**: The `/control` topic echoes command dispatches, which include sensitive session data (such as ephemeral WebRTC `aesKey`, `aesIV`, and IP address SDP payloads for live video streams). Real-time telemetry listeners and Home Assistant integrations should subscribe exclusively to `/monitor/{unit_uuid}/#`.
 
 > [!NOTE]
 > **Broker Subscription Rules**: Subscribing with multi-level wildcard `#` on `/monitor/{unit_uuid}/#` and `/control/{unit_uuid}/#` is granted with QoS 0 by the Qubo MQTT broker. Subscriptions to root `/config/...` topics are rejected by broker ACLs (`Unspecified error`).
@@ -844,7 +854,7 @@ When actuating a device or invoking device services (such as initiating a live v
 
 #### Smart Locks & Sensor Telemetry
 > [!NOTE]
-> Smart locks use the identical payload envelope under the `lockControl` service (for example, `services.lockControl.commands.unlock` or `services.lockControl.events.stateChanged`). The lock status enum values (`jammed`, `unlocking`, `locked`, `unlocked`) are inferred from official Android client decompilation.
+> Smart locks use the identical payload envelope under the `lockControl` service (for example, `services.lockControl.commands.unlock` or `services.lockControl.events.stateChanged`). The lock status values `"locked"` and `"unlocked"` are confirmed from official Android client decompilation; other transit or error states remain unverified on live hardware.
 
 ---
 
