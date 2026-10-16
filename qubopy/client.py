@@ -20,6 +20,7 @@ from qubopy.const import (
     PATH_GET_DEVICE_SHADOW_V2,
     PATH_GET_DEVICES,
     PATH_LOCK_OTP,
+    PATH_MQTT_CREDENTIALS,
     PATH_P2P_CALL,
     PATH_PLUG_ENERGY_DAY,
     PATH_PLUG_ENERGY_HOUR,
@@ -413,6 +414,18 @@ class QuboClient:
     ) -> dict[str, Any]:
         """Fetch daily PM2.5 particulate history for air purifiers."""
         path = PATH_PURIFIER_PM25_INSIGHT.format(
+            sp=self.sp_id,
+            unit_uuid=unit_uuid,
+            device_uuid=device_uuid,
+        )
+        resp = await self.request("GET", path)
+        return resp if isinstance(resp, dict) else {"raw": resp}
+
+    async def get_device_mqtt_credentials(
+        self, unit_uuid: str, device_uuid: str
+    ) -> dict[str, Any]:
+        """Fetch dynamic MQTT broker connection credentials for a device."""
+        path = PATH_MQTT_CREDENTIALS.format(
             sp=self.sp_id,
             unit_uuid=unit_uuid,
             device_uuid=device_uuid,

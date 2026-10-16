@@ -33,6 +33,11 @@ class QuboLight(QuboDevice):
             return None
 
     @property
+    def color_temp_kelvin(self) -> int | None:
+        """Return color temperature value in Kelvin (alias for color_temp)."""
+        return self.color_temp
+
+    @property
     def rgb_color(self) -> tuple[int, int, int] | None:
         """Return (red, green, blue) color tuple if active."""
         rep = self.reported_state
@@ -76,3 +81,7 @@ class QuboLight(QuboDevice):
     async def set_color_temp(self, temp: int) -> dict[str, Any]:
         """Set white color temperature."""
         return await self.send_command({"color_temp": temp})
+
+    async def set_color_temp_kelvin(self, kelvin: int) -> dict[str, Any]:
+        """Set white color temperature in Kelvin (alias for set_color_temp)."""
+        return await self.set_color_temp(kelvin)

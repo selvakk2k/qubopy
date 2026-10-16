@@ -109,7 +109,14 @@ class RtspStreamInfo(BaseModel):
 
     device_uuid: str
     is_supported: bool = False
-    stream_url: str | None = None
+    stream_url: str | None = Field(
+        default=None, validation_alias=AliasChoices("stream_url", "rtsp_url", "rtspUrl")
+    )
     auth_required: bool = False
     username: str | None = None
     password: str | None = Field(default=None, repr=False)
+
+    @property
+    def rtsp_url(self) -> str | None:
+        """Alias for stream_url."""
+        return self.stream_url

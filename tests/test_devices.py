@@ -20,7 +20,7 @@ from qubopy.devices import (
 )
 from qubopy.devices.base import _as_bool, _first_not_none
 from qubopy.exceptions import QuboCommandError
-from qubopy.models import DeviceModelInfo, DeviceShadow
+from qubopy.models import DeviceModelInfo, DeviceShadow, RtspStreamInfo
 
 
 def test_plug_telemetry_and_state(sample_client, mock_plug_info):
@@ -707,6 +707,123 @@ async def test_device_extended_api_delegates(sample_client):
 
     assert await cam.get_storage_info() == {"status": "ok"}
     sample_client.get_device_storage.assert_called_with("unit-cam", "cam-01")
+
+    await sample_client.close()
+
+
+@pytest.mark.asyncio
+async def test_light_properties_and_controls(sample_client):
+    """Test QuboLight state properties, setters, and Kelvin aliases."""
+    info = DeviceModelInfo(
+        uuid="light-01",
+        deviceId="light-01",
+        name="Living Room Bulb",
+        model="HLB01",
+        type="SmartBulb",
+        unitUUID="u-light",
+        entityUUID="e-light",
+    )
+    shadow = DeviceShadow(
+        device_uuid="light-01",
+        reported={
+            "state": "ON",
+            "brightness": 85,
+            "color_temp": 3200,
+            "rgb": [255, 140, 0],
+        },
+    )
+    light = QuboLight(info, sample_client, shadow)
+    assert light.is_on is True
+    assert light.brightness == 85
+    assert light.color_temp == 3200
+    assert light.color_temp_kelvin == 3200
+    assert light.rgb_color == (255, 140, 0)
+
+    sample_client.send_command = AsyncMock(return_value={"status": "SUCCESS"})
+
+    await light.turn_on(brightness=90, rgb=(0, 255, 0), color_temp=4000)
+    sample_client.send_command.assert_called_with(
+        unit_uuid="u-light",
+        entity_uuid="e-light",
+        device_uuid="light-01",
+        command={
+            "state": "ON",
+            "switch": True,
+            "brightness": 90,
+            "rgb": [0, 255, 0],
+            "color_temp": 4000,
+        },
+    )
+
+    await light.turn_off()
+    sample_client.send_command.assert_called_with(
+        unit_uuid="u-light",
+        entity_uuid="e-light",
+        device_uuid="light-01",
+        command={"state": "OFF", "switch": False},
+    )
+
+    await light.set_brightness(50)
+    sample_client.send_command.assert_called_with(
+        unit_uuid="u-light",
+        entity_uuid="e-light",
+        device_uuid="light-01",
+        command={"brightness": 50},
+    )
+
+    await light.set_rgb(10, 20, 30)
+    sample_client.send_command.assert_called_with(
+        unit_uuid="u-light",
+        entity_uuid="e-light",
+        device_uuid="light-01",
+        command={"rgb": [10, 20, 30]},
+    )
+
+    await light.set_color_temp(2700)
+    sample_client.send_command.assert_called_with(
+        unit_uuid="u-light",
+        entity_uuid="e-light",
+        device_uuid="light-01",
+        command={"color_temp": 2700},
+    )
+
+    await light.set_color_temp_kelvin(3000)
+    sample_client.send_command.assert_called_with(
+        unit_uuid="u-light",
+        entity_uuid="e-light",
+        device_uuid="light-01",
+        command={"color_temp": 3000},
+    )
+
+    await sample_client.close()
+
+
+def test_rtsp_stream_info_alias():
+    """Verify RtspStreamInfo supports both stream_url and rtsp_url."""
+    info1 = RtspStreamInfo(device_uuid="cam-1", stream_url="rtsps://host/live", is_supported=True)
+    assert info1.stream_url == "rtsps://host/live"
+    assert info1.rtsp_url == "rtsps://host/live"
+
+    info2 = RtspStreamInfo.model_validate({"device_uuid": "cam-2", "rtsp_url": "rtsps://host/live2"})
+    assert info2.stream_url == "rtsps://host/live2"
+    assert info2.rtsp_url == "rtsps://host/live2"
+
+
+@pytest.mark.asyncio
+async def test_device_get_mqtt_credentials(sample_client):
+    """Verify device.get_mqtt_credentials delegates to client."""
+    info = DeviceModelInfo(uuid="dev-mqtt-1", unitUUID="unit-1", model="HSP01")
+    dev = QuboPlug(info, sample_client)
+    sample_client.get_device_mqtt_credentials = AsyncMock(
+        return_value={"serverUrl": "ssl://mqtt.platform.quboworld.com:8883"}
+    )
+    res = await dev.get_mqtt_credentials()
+    assert res["serverUrl"] == "ssl://mqtt.platform.quboworld.com:8883"
+    sample_client.get_device_mqtt_credentials.assert_called_with("unit-1", "dev-mqtt-1")
+
+    dev_no_client = QuboPlug(info, None)
+    with pytest.raises(QuboCommandError):
+        await dev_no_client.get_mqtt_credentials()
 
     await sample_client.close()
 

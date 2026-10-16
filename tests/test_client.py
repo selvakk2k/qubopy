@@ -514,5 +514,31 @@ async def test_client_initiate_p2p_call(sample_client):
     await sample_client.close()
 
 
+@pytest.mark.asyncio
+async def test_client_get_device_mqtt_credentials(sample_client):
+    """Verify get_device_mqtt_credentials calls the proper agent MQTT endpoint."""
+    creds_payload = {
+        "username": "user-uuid",
+        "password": "dynamic-mqtt-password",
+        "clientId": "device-1",
+        "serverUrl": "ssl://mqtt.platform.quboworld.com:8883",
+    }
+    mock_resp = MockClientResponse(200, json.dumps(creds_payload))
+    with patch("aiohttp.ClientSession.request", return_value=mock_resp) as mock_req:
+        res = await sample_client.get_device_mqtt_credentials(
+            unit_uuid="unit-1", device_uuid="device-1"
+        )
+        assert res["username"] == "user-uuid"
+        assert res["password"] == "dynamic-mqtt-password"
+        assert res["serverUrl"] == "ssl://mqtt.platform.quboworld.com:8883"
+
+        mock_req.assert_called_once()
+        method, url = mock_req.call_args[0][:2]
+        assert method == "GET"
+        assert "/agent/device/mqtt/unit/unit-1/device/device-1" in url
+
+    await sample_client.close()
+
+
 
 

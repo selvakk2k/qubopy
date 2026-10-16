@@ -3,6 +3,7 @@
 import logging
 from typing import TYPE_CHECKING, Any
 
+from qubopy.exceptions import QuboCommandError
 from qubopy.models import DeviceModelInfo, DeviceShadow
 
 if TYPE_CHECKING:
@@ -134,6 +135,12 @@ class QuboDevice:
             }
         }
         return await self.update_attribute(payload)
+
+    async def get_mqtt_credentials(self) -> dict[str, Any]:
+        """Fetch dynamic MQTT broker connection credentials for this device."""
+        if not self.client:
+            raise QuboCommandError("Device client not initialized")
+        return await self.client.get_device_mqtt_credentials(self.unit_id, self.device_id)
 
     def __repr__(self) -> str:
         cls_name = self.__class__.__name__

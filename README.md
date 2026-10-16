@@ -26,6 +26,7 @@ An asynchronous Python client library and local Bluetooth Low Energy (BLE) crede
   - [5. Cameras & Doorbells - HCP / HCD Series (Hardware Verified)](#5-cameras--doorbells-hcp--hcd-series--hardware-verified)
   - [6. Dashcams - HCA Series (Hardware Verified)](#6-dashcams-hca-series--hardware-verified)
   - [7. Smart Door Locks - HLM / HLW Series](#7-smart-door-locks-hlm--hlw-series)
+  - [8. Security & Climate Sensors - HDS / HGS / HDT Series (API Modeled)](#8-security--climate-sensors-hds--hgs--hdt-series--api-modeled--untested)
 - [Command Line Interface (CLI)](#command-line-interface-cli)
   - [Session & Token Management](#session--token-management)
 - [IP Camera & Media Streaming Architecture](#ip-camera--media-streaming-architecture)
@@ -207,15 +208,17 @@ from qubopy.devices import QuboPlug
 
 # Assuming 'plug' is an instance of QuboPlug from get_all_devices()
 async def operate_plug(plug: QuboPlug):
-    # Toggle power state (or use plug.turn_off())
+    # Switch the plug relay on or off
     await plug.turn_on()
+    # await plug.turn_off()
 
-    # Fetch latest telemetry
+    # Fetch latest telemetry from cloud shadow
     await plug.refresh()
-    print(f"Status : {'ON' if plug.is_on else 'OFF'}")
-    print(f"Power  : {plug.power_watts} W")
-    print(f"Voltage: {plug.voltage} V")
-    print(f"Current: {plug.current} A")
+    print(f"Status      : {'ON' if plug.is_on else 'OFF'}")
+    print(f"Power       : {plug.power_watts} W")
+    print(f"Voltage     : {plug.voltage} V")
+    print(f"Current     : {plug.current} A")
+    print(f"Energy Meter: {plug.energy_kwh} kWh")
 
     # Query historical energy consumption ('hour', 'day', 'month', 'overall')
     history = await plug.get_energy_history(period="day")
@@ -232,14 +235,23 @@ async def operate_plug(plug: QuboPlug):
 from qubopy.devices import QuboAirPurifier
 
 async def operate_purifier(purifier: QuboAirPurifier):
+    # Power controls
     await purifier.turn_on()
+    # await purifier.turn_off()
 
-    # Set fan speed (1 to 3) or preset mode ('auto', 'sleep', 'manual')
+    # Set fan speed (1 to 3) and preset mode ('auto', 'sleep', 'manual')
     await purifier.set_fan_speed(2)
     await purifier.set_mode("auto")
 
-    # Read sensor values
+    # Lock physical buttons on the appliance
+    await purifier.set_child_lock(True)
+
+    # Read live status and sensor values
     await purifier.refresh()
+    print(f"Running     : {purifier.is_on}")
+    print(f"Fan Speed   : {purifier.fan_speed}")
+    print(f"Mode        : {purifier.mode}")
+    print(f"Child Lock  : {purifier.is_child_lock_on}")
     print(f"PM2.5       : {purifier.pm25} ug/m3")
     print(f"Filter Life : {purifier.filter_life_percent}%")
 
@@ -258,11 +270,23 @@ async def operate_purifier(purifier: QuboAirPurifier):
 from qubopy.devices import QuboLight
 
 async def operate_light(light: QuboLight):
-    # Turn on with custom brightness and color
+    # Turn on with custom brightness (0-100) and RGB color tuple
     await light.turn_on(brightness=80, rgb=(255, 140, 0))
 
-    # Tune white color temperature
+    # Tune white color temperature (accepts set_color_temp or set_color_temp_kelvin)
     await light.set_color_temp_kelvin(3000)
+
+    # Individual property setters
+    await light.set_brightness(50)
+    await light.set_rgb(0, 255, 128)
+    # await light.turn_off()
+
+    # Read current state
+    await light.refresh()
+    print(f"Status      : {'ON' if light.is_on else 'OFF'}")
+    print(f"Brightness  : {light.brightness}%")
+    print(f"Color Temp  : {light.color_temp_kelvin} K")
+    print(f"RGB Color   : {light.rgb_color}")
 ```
 
 ---
@@ -278,11 +302,28 @@ async def operate_camera(camera: QuboCamera):
     # Query streaming endpoint details
     stream_info = await camera.get_rtsp_info()
     if stream_info.is_supported:
-        print(f"RTSP Host : {stream_info.rtsp_url}")
+        print(f"RTSP Host : {stream_info.stream_url}")
         print(f"Username  : {stream_info.username}")
 
-    # Toggle privacy shutter mode
+    # Privacy shutter and deterrent siren controls
     await camera.set_privacy_mode(True)
+    await camera.set_siren(False)
+
+    # PTZ motor control (pan, tilt) and motion tracking for 360 models
+    await camera.pan_tilt(x=0, y=-50)
+    await camera.set_motion_tracking(True)
+
+    # Night vision mode ('true', 'false', 'auto')
+    await camera.set_night_mode("auto")
+
+    # Read live status, AI detections, and network diagnostics
+    await camera.refresh()
+    print(f"Privacy Mode    : {camera.is_privacy_mode_on}")
+    print(f"Motion Detected : {camera.is_motion_detected}")
+    print(f"Person Detected : {camera.is_person_detected}")
+    print(f"PTZ Position    : {camera.pan_tilt_position}")
+    print(f"LAN IP Address  : {camera.lan_ip_address}")
+    print(f"Wi-Fi Signal    : {camera.wifi_rssi} dBm ({camera.wifi_ssid})")
 
     # Fetch event timeline ('v2' for metadata, 'v3' for direct clip download links)
     events = await camera.get_events(version="v2", limit=10)
@@ -291,6 +332,7 @@ async def operate_camera(camera: QuboCamera):
     # Inspect SD card storage status and capacity
     storage = await camera.get_storage_info()
     print(f"Storage Status: {storage.get('status')}")
+    print(f"Free Storage  : {camera.sd_storage_free_mb} MB / {camera.sd_storage_total_mb} MB")
 ```
 
 ---
@@ -304,13 +346,22 @@ from qubopy.devices import QuboDashcam
 
 # Assuming 'dashcam' is an instance of QuboDashcam from get_all_devices()
 async def inspect_dashcam(dashcam: QuboDashcam):
+    # Configure dashcam settings remotely via cloud shadow
+    await dashcam.set_parking_monitoring(True)
+    await dashcam.set_overspeed_limit(100)  # km/h
+    await dashcam.set_audio_recording(True)
+
+    # Read status, Wi-Fi credentials, and telemetry
     await dashcam.refresh()
-    print(f"Dashcam Name   : {dashcam.name} ({dashcam.model})")
-    print(f"Serial Number  : {dashcam.serial_number}")
-    print(f"In-Car Wi-Fi AP: {dashcam.wifi_ap_ssid}")
-    print(f"WPA2 Password  : {dashcam.wifi_ap_password}")
-    print(f"Parking Mode   : {'Enabled' if dashcam.is_parking_monitoring_on else 'Disabled'}")
-    print(f"Speed Warning  : {dashcam.overspeed_limit} {dashcam.speed_unit}")
+    print(f"Dashcam Name    : {dashcam.name} ({dashcam.model})")
+    print(f"Serial Number   : {dashcam.serial_number}")
+    print(f"In-Car Wi-Fi AP : {dashcam.wifi_ap_ssid}")
+    print(f"WPA2 Password   : {dashcam.wifi_ap_password}")
+    print(f"Loop Recording  : {dashcam.is_recording}")
+    print(f"SD Card Status  : {dashcam.sd_card_status}")
+    print(f"Parking Mode    : {'Enabled' if dashcam.is_parking_monitoring_on else 'Disabled'}")
+    print(f"Audio Recording : {'Enabled' if dashcam.is_audio_recording_on else 'Disabled'}")
+    print(f"Speed Warning   : {dashcam.overspeed_limit} {dashcam.speed_unit}")
 ```
 
 ---
@@ -334,13 +385,15 @@ async def unlock_door(lock: QuboLock):
     else:
         print("Lock is in standalone Bluetooth mode; use local BLE key export.")
 
-    # Read live lock state & battery level from v2 deviceshadow
-    print(f"Is Locked     : {lock.is_locked}")
-    print(f"Battery Level : {lock.battery_percent}%")
+    # Read live real-time lock state & battery level from v2 deviceshadow
+    live_state = await lock.fetch_live_lock_state()
+    live_battery = await lock.fetch_live_battery()
+    print(f"Live Lock State : {live_state} (is_locked: {lock.is_locked})")
+    print(f"Live Battery    : {live_battery}% (cached: {lock.battery_percent}%)")
 
     # Generate temporary guest OTP PIN
     otp = await lock.generate_guest_otp()
-    print(f"Guest PIN OTP : {otp.get('otp')}")
+    print(f"Guest PIN OTP   : {otp.get('otp')}")
 ```
 
 #### Method B: Local BLE Offline Credentials (`⚠️ Experimental`)
@@ -364,6 +417,37 @@ async def export_lock_ble(lock: QuboLock):
     print(f"Auth Key: {keys.auth_key}")
     print(f"Offline Key: {keys.offline_key}")
     print(f"Admin PIN: {keys.admin_pass}")
+```
+
+---
+
+### 8. Security & Environmental Sensors (HDS / HGS / HDT Series) (`⚠️ API Modeled / Untested`)
+
+*Note: Security sensor alarms and environmental readings are modeled from APK application metadata. Community testing with physical sensors is welcome.*
+
+```python
+from qubopy.devices import QuboSensor
+
+async def inspect_sensor(sensor: QuboSensor):
+    await sensor.refresh()
+    print(f"Sensor Name: {sensor.name} ({sensor.model})")
+
+    # Security & Alarm Sensors (HDS Contact, HGS Gas, HSA Smoke)
+    if sensor.is_contact_open is not None:
+        print(f"Door / Window Open : {sensor.is_contact_open}")
+    if sensor.is_gas_alarm:
+        print("Gas Leak Alarm     : ACTIVE")
+    if sensor.is_smoke_alarm:
+        print("Smoke Alarm        : ACTIVE")
+
+    # Climate Sensors (HDT Temperature & Humidity)
+    if sensor.temperature_celsius is not None:
+        print(f"Temperature        : {sensor.temperature_celsius} °C")
+    if sensor.humidity_percent is not None:
+        print(f"Relative Humidity  : {sensor.humidity_percent} %")
+
+    # Sensor battery telemetry
+    print(f"Battery Level      : {sensor.battery_percent}%")
 ```
 
 ---
@@ -637,6 +721,31 @@ The response provides the dynamic broker credentials:
   "clientId": "<client_or_device_uuid>",
   "serverUrl": "ssl://mqtt.platform.quboworld.com:8883"
 }
+```
+
+#### Python Example: Fetching Dynamic MQTT Credentials
+
+```python
+import asyncio
+from qubopy import QuboAuth, QuboClient
+
+async def main():
+    auth = QuboAuth()
+    await auth.login_with_email("<email>", "<password>")
+
+    async with QuboClient(auth) as client:
+        devices = await client.get_all_devices()
+        if devices:
+            dev = devices[0]
+            # Fetch dynamic MQTT broker credentials for the device
+            mqtt_creds = await dev.get_mqtt_credentials()
+            print("Dynamic MQTT Credentials:")
+            print(f"  Broker Server : {mqtt_creds.get('serverUrl')}")
+            print(f"  Username      : {mqtt_creds.get('username')}")
+            print(f"  Password      : {mqtt_creds.get('password')}")
+            print(f"  Client ID     : {mqtt_creds.get('clientId')}")
+
+asyncio.run(main())
 ```
 
 ### 3. Topic Hierarchy & Subscriptions
