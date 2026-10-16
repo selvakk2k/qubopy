@@ -176,3 +176,24 @@ class QuboCamera(QuboDevice):
         if not self.client:
             raise QuboCommandError("Device client not initialized")
         return await self.client.get_device_storage(self.unit_id, self.device_id)
+
+    async def initiate_p2p_call(
+        self,
+        local_ip: str,
+        local_port: int = 49700,
+        quality: str = "high",
+    ) -> dict[str, Any]:
+        """Initiate a direct local P2P streaming session over UDP.
+
+        Returns negotiated session ID and AES-128-GCM keys for decrypting the
+        incoming RTP/H.264 stream.
+        """
+        if not self.client:
+            raise QuboCommandError("Device client not initialized")
+        return await self.client.initiate_p2p_call(
+            unit_uuid=self.unit_id,
+            device_uuid=self.device_id,
+            local_ip=local_ip,
+            local_port=local_port,
+            quality=quality,
+        )

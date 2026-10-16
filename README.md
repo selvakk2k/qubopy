@@ -29,6 +29,9 @@ An asynchronous Python client library and local Bluetooth Low Energy (BLE) crede
 - [Command Line Interface (CLI)](#command-line-interface-cli)
   - [Session & Token Management](#session--token-management)
 - [IP Camera & Media Streaming Architecture](#ip-camera--media-streaming-architecture)
+  - [1. Cloud Wowza RTSPS Streaming](#1-cloud-wowza-rtsps-streaming)
+  - [2. Local Peer-to-Peer (P2P) UDP Streaming](#2-local-peer-to-peer-p2p-udp-streaming)
+  - [3. Downstream go2rtc Configuration](#3-downstream-go2rtc-configuration)
 - [Cloud MQTT Broker & Real-Time Telemetry](#cloud-mqtt-broker--real-time-telemetry)
 - [Local BLE Architecture for Smart Locks](#local-ble-architecture-for-smart-locks)
   - [GATT Services and Characteristics](#gatt-services-and-characteristics)
@@ -498,11 +501,111 @@ if __name__ == "__main__":
 
 ## IP Camera & Media Streaming Architecture
 
-Qubo security cameras (`HCP` / `HCO` series) and video doorbells (`HCD` series) handle streaming sessions as follows:
+Qubo security cameras (`HCP` / `HCO` series) and video doorbells (`HCD` series) support two media streaming architectures:
 
-* **Session Exclusivity**: Streaming URLs minted by Qubo cloud are single-consumer sessions (each URL serves one active stream session).
-* **Local Network Streaming**: The mobile app does not rely on open LAN RTSP ports. Instead, it negotiates direct peer-to-peer (P2P) UDP connections encrypted with AES-128-GCM over RTP.
-* **Downstream Integration**: `qubopy` extracts device identifiers, unit IDs, live tokens, and streaming endpoints so that media engines (such as `go2rtc` and Home Assistant) can connect without third-party tools.
+1. **Cloud Wowza RTSPS Streaming**: Hosted single-consumer RTSPS endpoints served by Qubo cloud infrastructure.
+2. **Local Peer-to-Peer (P2P) UDP Streaming**: Low-latency direct RTP media delivery negotiated over local UDP and secured with AES-128-GCM encryption.
+
+---
+
+### 1. Cloud Wowza RTSPS Streaming
+
+Cloud RTSPS provides remote video access without requiring direct LAN reachability or port forwarding. Each stream session is authenticated with an ephemeral token:
+
+```python
+import asyncio
+from qubopy import QuboAuth, QuboClient
+from qubopy.devices import QuboCamera
+
+async def main():
+    auth = QuboAuth()
+    await auth.login_with_email("<email>", "<password>")
+
+    async with QuboClient(auth) as client:
+        devices = await client.get_all_devices()
+        camera = next((d for d in devices if isinstance(d, QuboCamera)), None)
+        if camera:
+            # Mint an authenticated cloud RTSPS streaming URL ('high' or 'low')
+            stream_url = await camera.start_stream(quality="high")
+            print(f"RTSPS Stream URL: {stream_url}")
+            # Format: rtsps://wowza.platform.quboworld.com:443/live/<device_id>?token=<ephemeral_token>
+
+asyncio.run(main())
+```
+
+> [!NOTE]
+> Cloud Wowza URLs are single-consumer sessions. Opening the stream in VLC or restreaming software terminates any active stream session using the same token.
+
+---
+
+### 2. Local Peer-to-Peer (P2P) UDP Streaming
+
+Qubo cameras do not expose an unauthenticated LAN RTSP port. Instead, the camera uses a direct UDP streaming protocol negotiated via the Qubo cloud signaling gateway:
+
+* **Signaling**: The client generates a 16-byte `aesKey` and 16-byte `aesIV`, then posts a local UDP candidate (`<local_ip>:<local_port>`) to `/stream-manager/api/v2/sp/{sp}/unit/{unit_uuid}/device/{device_uuid}/p2pCall`.
+* **Transport**: The camera sends raw RTP packets over UDP directly to the client's listening IP and port.
+* **Payload Types**: Video uses Dynamic PT `96` (H.264 elementary stream); two-way audio uses PT `97`.
+* **Decryption**: RTP payload bytes are encrypted using AES-128-GCM with the negotiated session key and IV. The 16-byte GCM authentication tag is appended to each UDP packet.
+* **ICE/STUN Handshake**: An initial ICE/STUN Binding Request (magic cookie `0x2112A442`) with username `0x70` ("check B") triggers immediate media transmission from the camera.
+
+#### Python Example: Initiating P2P Call
+
+```python
+import asyncio
+from qubopy import QuboAuth, QuboClient
+from qubopy.devices import QuboCamera
+
+async def main():
+    auth = QuboAuth()
+    await auth.login_with_email("<email>", "<password>")
+
+    async with QuboClient(auth) as client:
+        devices = await client.get_all_devices()
+        camera = next((d for d in devices if isinstance(d, QuboCamera)), None)
+        if not camera:
+            print("No camera found on account")
+            return
+
+        # Negotiate local P2P session
+        # Provide the local IP and port where your media receiver or proxy is listening
+        session = await camera.initiate_p2p_call(
+            local_ip="192.168.1.50",  # IP address of receiver (Home Assistant, go2rtc, or server)
+            local_port=49700,         # Listening UDP port on receiver
+            quality="high",           # "high" (1080p/2K) or "low" (360p)
+        )
+
+        print("P2P Session Initiated:")
+        print(f"  Session ID  : {session['session_id']}")
+        print(f"  AES Key Hex : {session['aes_key_hex']}")
+        print(f"  AES IV Hex  : {session['aes_iv_hex']}")
+        print(f"  Target UDP  : {session['local_ip']}:{session['local_port']}")
+        print(f"  Quality     : {session['quality']}")
+
+asyncio.run(main())
+```
+
+---
+
+### 3. Downstream go2rtc Configuration
+
+`go2rtc` can consume Qubo camera feeds for rebroadcasting into Home Assistant, WebRTC, and RTSP restreaming:
+
+#### Option A: Cloud RTSPS Stream
+```yaml
+# go2rtc.yaml
+streams:
+  qubo_camera_cloud:
+    - "rtsps://wowza.platform.quboworld.com:443/live/<device_uuid>?token=<session_token>#backchannel=0"
+```
+
+#### Option B: Local P2P via FFmpeg Pipe
+For setups running a local UDP receiver daemon or pipe:
+```yaml
+# go2rtc.yaml
+streams:
+  qubo_camera_local:
+    - "exec:ffmpeg -protocol_whitelist file,crypto,udp,rtp -i pipe:0 -c copy -f rtsp {output}"
+```
 
 ---
 

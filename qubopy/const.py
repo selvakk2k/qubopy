@@ -55,6 +55,9 @@ PATH_RTSP_SUPPORT: str = (
 PATH_P2P_CREDENTIALS: str = (
     "/stream-manager/api/v1/sp/{sp}/unit/{unit_uuid}/devices/pp2p/credentials"
 )
+PATH_P2P_CALL: str = (
+    "/stream-manager/api/v2/sp/{sp}/unit/{unit_uuid}/device/{device_uuid}/p2pCall"
+)
 PATH_START_STREAM: str = (
     "/stream-manager/api/v1/sp/{sp}/stream/unit/{unit_uuid}/device/{device_uuid}"
 )

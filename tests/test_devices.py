@@ -19,6 +19,7 @@ from qubopy.devices import (
     is_gateway_device,
 )
 from qubopy.devices.base import _as_bool, _first_not_none
+from qubopy.exceptions import QuboCommandError
 from qubopy.models import DeviceModelInfo, DeviceShadow
 
 
@@ -296,6 +297,28 @@ async def test_camera_controls_and_streaming(sample_client):
         device_uuid="cam-01",
         attributes={"panTiltControl": {"attributes": {"horizontalVerticalPostion": "10,-50"}}},
     )
+
+    # Test P2P video call negotiation
+    sample_client.initiate_p2p_call = AsyncMock(
+        return_value={"session_id": "test-session", "aes_key_hex": "AA" * 16}
+    )
+    p2p_res = await cam.initiate_p2p_call(
+        local_ip="192.168.0.50",
+        local_port=49700,
+        quality="high",
+    )
+    assert p2p_res["session_id"] == "test-session"
+    sample_client.initiate_p2p_call.assert_called_with(
+        unit_uuid="u-01",
+        device_uuid="cam-01",
+        local_ip="192.168.0.50",
+        local_port=49700,
+        quality="high",
+    )
+
+    cam_no_client = QuboCamera(info, None, shadow)
+    with pytest.raises(QuboCommandError):
+        await cam_no_client.initiate_p2p_call(local_ip="192.168.0.50")
 
 
 async def test_dashcam_controls(sample_client):

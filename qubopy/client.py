@@ -2,6 +2,8 @@
 
 import json
 import logging
+import os
+import uuid
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -18,6 +20,7 @@ from qubopy.const import (
     PATH_GET_DEVICE_SHADOW_V2,
     PATH_GET_DEVICES,
     PATH_LOCK_OTP,
+    PATH_P2P_CALL,
     PATH_PLUG_ENERGY_DAY,
     PATH_PLUG_ENERGY_HOUR,
     PATH_PLUG_ENERGY_MONTH,
@@ -521,6 +524,66 @@ class QuboClient:
         )
         stream_url = resp.get("streamURL") or ""
         return str(stream_url)
+
+    async def initiate_p2p_call(
+        self,
+        unit_uuid: str,
+        device_uuid: str,
+        local_ip: str,
+        local_port: int = 49700,
+        quality: str = "high",
+        aes_key: bytes | None = None,
+        aes_iv: bytes | None = None,
+    ) -> dict[str, Any]:
+        """Initiate a direct local P2P streaming session with a camera or doorbell.
+
+        Mints ephemeral AES-128-GCM session keys, dispatches the signaling offer, and
+        returns the cryptographic parameters needed to decrypt the inbound UDP/RTP stream.
+        """
+        key = aes_key or os.urandom(16)
+        iv = aes_iv or os.urandom(16)
+        session_id = str(uuid.uuid4())
+        quality_val = quality if quality in ("high", "low", "medium", "auto") else "high"
+
+        offer = json.dumps([
+            {
+                "host": f"{local_ip}:{local_port}",
+                "protocol": "UDP",
+                "srflx_0": f"{local_ip}:{local_port}",
+            }
+        ])
+
+        payload = {
+            "aesIV": iv.hex().upper(),
+            "aesKey": key.hex().upper(),
+            "mediaStreams": "both",
+            "mobileUUID": self.auth.tokens.user_uuid if self.auth.tokens else "",
+            "offerData": offer,
+            "protocols": "udp",
+            "pttEnabled": "false",
+            "sessionId": session_id,
+            "sourceType": "live",
+            "srcDeviceId": self.auth.device_id,
+            "streamSourceQuality": quality_val,
+        }
+
+        path = PATH_P2P_CALL.format(
+            sp=self.sp_id,
+            unit_uuid=unit_uuid,
+            device_uuid=device_uuid,
+        )
+        resp = await self.request("POST", path, json_data=payload)
+        return {
+            "session_id": session_id,
+            "aes_key": key,
+            "aes_iv": iv,
+            "aes_key_hex": key.hex().upper(),
+            "aes_iv_hex": iv.hex().upper(),
+            "local_ip": local_ip,
+            "local_port": local_port,
+            "quality": quality_val,
+            "response": resp,
+        }
 
     async def send_command(
         self,

@@ -477,5 +477,42 @@ async def test_client_get_device_storage_and_purifier_insights(sample_client):
     await sample_client.close()
 
 
+@pytest.mark.asyncio
+async def test_client_initiate_p2p_call(sample_client):
+    """Verify initiate_p2p_call generates AES keys and dispatches p2pCall payload."""
+    mock_resp = MockClientResponse(200, json.dumps({"status": "SUCCESS"}))
+    with patch("aiohttp.ClientSession.request", return_value=mock_resp) as mock_req:
+        res = await sample_client.initiate_p2p_call(
+            unit_uuid="unit-1",
+            device_uuid="cam-1",
+            local_ip="192.168.1.50",
+            local_port=49700,
+            quality="high",
+        )
+        assert res["response"] == {"status": "SUCCESS"}
+        assert len(res["aes_key"]) == 16
+        assert len(res["aes_iv"]) == 16
+        assert len(res["aes_key_hex"]) == 32
+        assert len(res["aes_iv_hex"]) == 32
+        assert res["local_ip"] == "192.168.1.50"
+        assert res["local_port"] == 49700
+        assert res["quality"] == "high"
+
+        # Check request url and json payload
+        mock_req.assert_called_once()
+        method, url = mock_req.call_args[0][:2]
+        assert method == "POST"
+        assert "/stream-manager/api/v2/sp/" in url
+        assert "/unit/unit-1/device/cam-1/p2pCall" in url
+
+        payload = mock_req.call_args[1]["json"]
+        assert payload["aesKey"] == res["aes_key_hex"]
+        assert payload["aesIV"] == res["aes_iv_hex"]
+        assert "192.168.1.50:49700" in payload["offerData"]
+        assert payload["protocols"] == "udp"
+
+    await sample_client.close()
+
+
 
 
