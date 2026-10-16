@@ -776,6 +776,16 @@ async def main():
 asyncio.run(main())
 ```
 
+##### Token Expiry, Reconnect Lifecycle & State Seeding
+
+* **Account Authentication Differences**:
+  * **Phone SMS OTP Accounts**: Cloud policy issues a 1-hour JWT `accessToken` without a `refreshToken`. When the token expires, automatic background renewal is not possible. If the MQTT connection drops after the hour, `QuboMqttListener` halts retry attempts to prevent broker flooding and invokes the `on_auth_failure` callback (useful for triggering Home Assistant repair/re-auth flows).
+  * **Email & Password Accounts**: Cloud sessions can supply a `refreshToken`, allowing `QuboMqttListener` to automatically renew credentials in the background before reconnecting with exponential backoff (1s to 60s).
+* **QoS 0 Delivery & Initial Seeding**:
+  * Qubo MQTT broker telemetry is published with QoS 0 without retained flags (`retain = false`).
+  * Connecting or reconnecting will not emit current states until a physical event or command transition occurs.
+  * Always invoke `await listener.seed_state()` upon startup to fetch baseline entity attributes from the REST shadow before applying real-time deltas.
+
 ### 3. Topic Hierarchy & Subscriptions
 
 Once authenticated over TLS, clients subscribe to specific event streams:
