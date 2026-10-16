@@ -719,36 +719,52 @@ In addition to REST-based control, the Qubo platform operates an MQTT broker for
 * **Protocol**: TLS / SSL (`ssl://`)
 * **Transport**: TCP over TLS with standard server certificate verification
 
-### 2. User & Device Authentication (Experimental / Unverified)
+### 2. User & Device Authentication (Hardware Verified)
 
 > [!WARNING]
 > **Client ID Collision Hazard**: MQTT brokers disconnect existing sessions when a duplicate Client ID connects. If you connect to the broker using `auth.device_id` (the identifier of your mobile phone), your mobile phone will be kicked off push notifications. Always use an independent, randomized Client ID for library or daemon sessions.
 
-The broker connection parameters and credentials below are reconstructed from app decompilation and are currently **experimental / unverified** over live wire connections:
+The Qubo MQTT broker authenticates using your account's JWT bearer access token:
 
 * **Username**: The account user UUID (`auth.user_uuid`).
-* **Password**: Account MQTT secret (`auth.mqtt_password`). Note: `mqttPassword` is a tentative key name identified in the app's local SQLite schema; its presence in all login API response payloads is unverified.
+* **Password**: The active JWT access token (`auth.tokens.access_token`).
 * **Client ID**: A unique client string (e.g. `f"qubopy_{uuid.uuid4().hex[:8]}"`).
 
-#### Python Example: Inspecting MQTT Parameters
+#### Python Example: Connecting to the Live MQTT Broker
 
 ```python
 import asyncio
+import ssl
 import uuid
+import paho.mqtt.client as mqtt
 from qubopy import QuboAuth
 
 async def main():
     auth = QuboAuth()
-    await auth.login_with_email("<email>", "<password>")
+    tokens = await auth.login_with_email("<email>", "<password>")
 
     # Generate a distinct client ID to avoid disconnecting your phone app
     client_id = f"qubopy_{uuid.uuid4().hex[:8]}"
 
-    print("MQTT Broker Connection Parameters (Experimental):")
-    print("  Broker Server : ssl://mqtt.platform.quboworld.com:8883")
-    print(f"  Username      : {auth.user_uuid}")
-    print(f"  Password      : {auth.mqtt_password or '<None returned>'}")
-    print(f"  Client ID     : {client_id}")
+    def on_connect(client, userdata, flags, rc, properties=None):
+        print(f"Connected to Qubo MQTT broker (rc={rc})")
+        client.subscribe(f"/monitor/<unit_uuid>/#")
+
+    def on_message(client, userdata, msg):
+        print(f"Received telemetry on {msg.topic}: {msg.payload.decode('utf-8')}")
+
+    mqttc = mqtt.Client(
+        mqtt.CallbackAPIVersion.VERSION2,
+        client_id=client_id,
+        clean_session=True,
+    )
+    mqttc.username_pw_set(username=tokens.user_uuid, password=tokens.access_token)
+    mqttc.tls_set_context(ssl.create_default_context())
+    mqttc.on_connect = on_connect
+    mqttc.on_message = on_message
+
+    mqttc.connect("mqtt.platform.quboworld.com", 8883, 60)
+    mqttc.loop_start()
 
 asyncio.run(main())
 ```
