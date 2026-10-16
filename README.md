@@ -29,13 +29,12 @@ An asynchronous Python client library and local Bluetooth Low Energy (BLE) crede
     - [Downstream go2rtc Configuration](#c-downstream-go2rtc-configuration)
   - [6. Dashcams - HCA Series (Hardware Verified)](#6-dashcams-hca-series--hardware-verified)
   - [7. Smart Door Locks - HLM / HLW Series](#7-smart-door-locks-hlm--hlw-series)
+    - [Method A: Cloud Gateway Unlock (Hardware Verified)](#method-a-cloud-gateway-unlock-hardware-verified)
+    - [Method B: Local BLE Key Export & ESPHome Configuration (Experimental)](#method-b-local-ble-key-export--esphome-configuration-experimental)
   - [8. Security & Climate Sensors - HDS / HGS / HDT Series (API Modeled)](#8-security--climate-sensors-hds--hgs--hdt-series--api-modeled--untested)
 - [Command Line Interface (CLI)](#command-line-interface-cli)
   - [Session & Token Management](#session--token-management)
 - [Cloud MQTT Broker & Real-Time Telemetry](#cloud-mqtt-broker--real-time-telemetry)
-- [Local BLE Architecture for Smart Locks](#local-ble-architecture-for-smart-locks)
-  - [GATT Services and Characteristics](#gatt-services-and-characteristics)
-  - [Experimental ESPHome Configuration](#experimental-esphome-configuration)
 - [Contributing & Testing](#contributing--testing)
 - [Credits & License](#credits--license)
 
@@ -463,15 +462,17 @@ async def unlock_door(lock: QuboLock):
     print(f"Guest PIN OTP   : {otp.get('otp')}")
 ```
 
-#### Method B: Local BLE Offline Credentials (`⚠️ Experimental`)
+#### Method B: Local BLE Key Export & ESPHome Configuration (`⚠️ Experimental`)
 
 > [!CAUTION]
-> **Untested / Experimental**: The BLE lock credential extraction and GATT definitions below were derived from reverse-engineering the official mobile application. They have **not been tested or verified on physical smart lock hardware**. Testing and contributions from community members with physical locks are welcome.
+> **Untested / Experimental**: The BLE lock credential extraction, GATT definitions, and ESPHome templates below were derived from reverse-engineering the official mobile application. They have **not been tested or verified on physical smart lock hardware**. Testing and contributions from community members with physical locks are welcome.
 
 > [!WARNING]
 > **Cryptographic Key Security**: The extracted Bluetooth authentication key (`dbtauthkey`), offline key seed (`dbtoffkey`), and master admin passcode grant physical authorization to actuate the lock bolt. Treat these exported credentials with the same confidentiality as physical keys. Never commit exported credentials to public source control or paste them into unredacted issue reports.
 
-Extract offline cryptographic keys for experimental local use with Home Assistant Bluetooth Proxies or ESPHome:
+##### 1. Exporting Offline BLE Credentials
+
+Extract offline cryptographic parameters from the account shadow using Python or the CLI (`python -m qubopy export-ble-keys`):
 
 ```python
 from qubopy.devices import QuboLock
@@ -479,11 +480,61 @@ from qubopy.devices import QuboLock
 async def export_lock_ble(lock: QuboLock):
     keys = await lock.get_ble_lock_keys()
     print("=== Qubo BLE Lock Credentials (Experimental) ===")
-    print(f"Device Name: {keys.device_name}")
-    print(f"Bluetooth MAC: {keys.mac_address}")
-    print(f"Auth Key: {keys.auth_key}")
-    print(f"Offline Key: {keys.offline_key}")
-    print(f"Admin PIN: {keys.admin_pass}")
+    print(f"Device Name   : {keys.device_name}")
+    print(f"Bluetooth MAC : {keys.mac_address}")
+    print(f"Auth Key      : {keys.auth_key}")
+    print(f"Offline Key   : {keys.offline_key}")
+    print(f"Admin PIN     : {keys.admin_pass}")
+```
+
+Key parameters extracted from account metadata:
+* `dmac`: Physical Bluetooth MAC address.
+* `dbtauthkey`: Cryptographic session key used during GATT handshake.
+* `dbtoffkey`: Cryptographic seed for computing time-based offline passcodes.
+* `dadminpass`: Master PIN code.
+
+##### 2. GATT Services and Characteristics
+
+* **Main GATT Service**: `0000fee0-0000-1000-8000-00805f9b34fb`
+* **Auth / Write Characteristic**: `0000fee1-0000-1000-8000-00805f9b34fb`
+* **Notify / State Characteristic**: `0000fee2-0000-1000-8000-00805f9b34fb`
+
+##### 3. Experimental ESPHome Configuration
+
+The following configuration demonstrates how an ESP32 board running ESPHome can listen to the lock's state characteristic and dispatch write commands:
+
+```yaml
+# Experimental ESPHome Configuration (Untested on Physical Lock Hardware)
+# Requires an ESP32 board with Bluetooth Low Energy enabled
+
+esp32_ble_tracker:
+
+ble_client:
+  - mac_address: "XX:XX:XX:XX:XX:XX"  # Replace with exported Bluetooth MAC (dmac)
+    id: qubo_lock_ble
+
+sensor:
+  # Notify/State Characteristic for Lock Status & Battery Telemetry
+  - platform: ble_client
+    type: characteristic
+    ble_client_id: qubo_lock_ble
+    id: lock_state
+    name: "Qubo Lock State"
+    service_uuid: "0000fee0-0000-1000-8000-00805f9b34fb"
+    characteristic_uuid: "0000fee2-0000-1000-8000-00805f9b34fb"
+    notify: true
+
+button:
+  # Auth/Write Characteristic for Dispatching Local Handshake Packets
+  - platform: template
+    name: "Qubo Unlock (Experimental)"
+    on_press:
+      - ble_client.ble_write:
+          id: qubo_lock_ble
+          service_uuid: "0000fee0-0000-1000-8000-00805f9b34fb"
+          characteristic_uuid: "0000fee1-0000-1000-8000-00805f9b34fb"
+          # Payload requires AES handshake using exported dbtauthkey
+          value: [0x00]
 ```
 
 ---
@@ -714,64 +765,6 @@ Once authenticated over TLS, clients subscribe to specific event streams:
 | **User Push Events** | `/users/{user_uuid}/events` | Real-time push events for doorbell presses, motion detection, and security alarms. |
 | **Device Telemetry** | `units/{unit_uuid}/devices/{device_uuid}/status` | Live attribute reports including plug power (W), air purifier PM2.5, and sensor metrics. |
 | **Command Channel** | `units/{unit_uuid}/devices/{device_uuid}/command` | Asynchronous command publication channel for cloud-relayed actuation. |
-
----
-
-## Local BLE Architecture for Smart Locks
-
-> [!CAUTION]
-> **Experimental & Hardware-Unverified**: All BLE lock definitions below were reverse-engineered from application binaries. They have not been validated against physical smart locks.
-
-Qubo Bluetooth smart locks store offline parameters in the cloud. The parameters extracted from account metadata include:
-
-* `dmac`: Physical Bluetooth MAC address.
-* `dbtauthkey`: Cryptographic session key used during GATT handshake.
-* `dbtoffkey`: Cryptographic seed for computing time-based offline passcodes.
-* `dadminpass`: Master PIN code.
-
-### GATT Services and Characteristics
-
-* **Main GATT Service**: `0000fee0-0000-1000-8000-00805f9b34fb`
-* **Auth / Write Characteristic**: `0000fee1-0000-1000-8000-00805f9b34fb`
-* **Notify / State Characteristic**: `0000fee2-0000-1000-8000-00805f9b34fb`
-
-### Experimental ESPHome Configuration
-
-The following configuration demonstrates how an ESP32 board running ESPHome can listen to the lock's state characteristic and dispatch write commands:
-
-```yaml
-# Experimental ESPHome Configuration (Untested on Physical Lock Hardware)
-# Requires an ESP32 board with Bluetooth Low Energy enabled
-
-esp32_ble_tracker:
-
-ble_client:
-  - mac_address: "XX:XX:XX:XX:XX:XX"  # Replace with exported Bluetooth MAC (dmac)
-    id: qubo_lock_ble
-
-sensor:
-  # Notify/State Characteristic for Lock Status & Battery Telemetry
-  - platform: ble_client
-    type: characteristic
-    ble_client_id: qubo_lock_ble
-    id: lock_state
-    name: "Qubo Lock State"
-    service_uuid: "0000fee0-0000-1000-8000-00805f9b34fb"
-    characteristic_uuid: "0000fee2-0000-1000-8000-00805f9b34fb"
-    notify: true
-
-button:
-  # Auth/Write Characteristic for Dispatching Local Handshake Packets
-  - platform: template
-    name: "Qubo Unlock (Experimental)"
-    on_press:
-      - ble_client.ble_write:
-          id: qubo_lock_ble
-          service_uuid: "0000fee0-0000-1000-8000-00805f9b34fb"
-          characteristic_uuid: "0000fee1-0000-1000-8000-00805f9b34fb"
-          # Payload requires AES handshake using exported dbtauthkey
-          value: [0x00]
-```
 
 ---
 
