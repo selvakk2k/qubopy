@@ -773,10 +773,78 @@ asyncio.run(main())
 
 Once authenticated over TLS, clients subscribe to specific event streams:
 
-| Stream Type | Topic Pattern | Description |
-| :--- | :--- | :--- |
-| **Unit Monitor / Events** | `/monitor/{unit_uuid}/#` | Real-time push events for sensor trips, motion detections, doorbell rings, and lock status changes. |
-| **Device Control Channel** | `/control/{unit_uuid}/{device_uuid}/{service_name}` | Command publication channel for cloud-relayed actuation and attribute updates. |
+| Stream Type | Topic Pattern | Status | Description |
+| :--- | :--- | :--- | :--- |
+| **Unit Monitor / Inbound Telemetry** | `/monitor/{unit_uuid}/#` | `✅ Hardware Verified` | Real-time device event telemetry, motion events, camera position changes, and client heartbeats. |
+| **Device Control Channel** | `/control/{unit_uuid}/{device_uuid}/{service_name}` | `✅ Hardware Verified` | Command publication channel for cloud-relayed actuation and attribute updates. |
+
+> [!NOTE]
+> **Broker Subscription Rules**: Subscribing with multi-level wildcard `#` on `/monitor/{unit_uuid}/#` and `/control/{unit_uuid}/#` is granted with QoS 0 by the Qubo MQTT broker. Subscriptions to root `/config/...` topics are rejected by broker ACLs (`Unspecified error`).
+
+#### Inbound Event Telemetry (`/monitor/...`) (`✅ Hardware Verified`)
+
+When a device changes state or raises an event (such as camera pan/tilt rotation, motion alert, or doorbell ring), it publishes an event envelope to `/monitor/{unit_uuid}/{device_uuid}/{service_name}`:
+
+```json
+{
+  "devices": {
+    "deviceUUID": "<device_uuid>",
+    "entityUUID": "<entity_uuid>",
+    "services": {
+      "panTiltControl": {
+        "events": {
+          "stateChanged": {
+            "horizontalVerticalPostion": "0,-181",
+            "stateChangeEventDefaultPriority": "medium"
+          }
+        },
+        "instanceId": "0"
+      }
+    },
+    "srcDeviceId": "MPC_24:14:07:XX:XX:XX",
+    "timestamp": 1792155665762,
+    "unitUUID": "<unit_uuid>",
+    "userUUID": "<user_uuid>"
+  }
+}
+```
+
+#### Outbound Command Publication (`/control/...`) (`✅ Hardware Verified`)
+
+When actuating a device or invoking device services (such as initiating a live video stream session, triggering pan/tilt moves, or updating settings), commands are published to `/control/{unit_uuid}/{device_uuid}/{service_name}`:
+
+```json
+{
+  "command": {
+    "devices": {
+      "deviceUUID": "<device_uuid>",
+      "services": {
+        "p2pStreaming": {
+          "commands": {
+            "startP2pCall": {
+              "parameters": {
+                "sessionId": "<session_uuid>",
+                "mediaStreams": "both",
+                "useTls": "true"
+              },
+              "instanceId": 0
+            }
+          }
+        }
+      }
+    }
+  },
+  "timestamp": 1792155645362,
+  "deviceUUID": "<device_uuid>",
+  "srcDeviceId": "<mobile_device_id>",
+  "msgSequenceId": 1792155645362,
+  "clientId": "<client_uuid>"
+}
+```
+
+#### Smart Locks & Sensor Telemetry
+> [!NOTE]
+> Smart locks use the identical payload envelope under the `lockControl` service (for example, `services.lockControl.commands.unlock` or `services.lockControl.events.stateChanged`). The lock status enum values (`jammed`, `unlocking`, `locked`, `unlocked`) are inferred from official Android client decompilation.
 
 ---
 
