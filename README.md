@@ -212,7 +212,11 @@ async def operate_plug(plug: QuboPlug):
     print(f"Status : {'ON' if plug.is_on else 'OFF'}")
     print(f"Power  : {plug.power_watts} W")
     print(f"Voltage: {plug.voltage} V")
-    print(f"Current: {plug.current_amps} A")
+    print(f"Current: {plug.current} A")
+
+    # Query historical energy consumption ('hour', 'day', 'month', 'overall')
+    history = await plug.get_energy_history(period="day")
+    print(f"Energy History: {history}")
 ```
 
 ---
@@ -235,6 +239,10 @@ async def operate_purifier(purifier: QuboAirPurifier):
     await purifier.refresh()
     print(f"PM2.5       : {purifier.pm25} ug/m3")
     print(f"Filter Life : {purifier.filter_life_percent}%")
+
+    # Daily PM2.5 particulate history
+    insights = await purifier.get_pm25_insights()
+    print(f"Daily PM2.5 Insights: {insights}")
 ```
 
 ---
@@ -272,6 +280,14 @@ async def operate_camera(camera: QuboCamera):
 
     # Toggle privacy shutter mode
     await camera.set_privacy_mode(True)
+
+    # Fetch event timeline ('v2' for metadata, 'v3' for direct clip download links)
+    events = await camera.get_events(version="v2", limit=10)
+    print(f"Recent events count: {len(events)}")
+
+    # Inspect SD card storage status and capacity
+    storage = await camera.get_storage_info()
+    print(f"Storage Status: {storage.get('status')}")
 ```
 
 ---
@@ -314,6 +330,14 @@ async def unlock_door(lock: QuboLock):
         print(f"Unlock result: {result}")
     else:
         print("Lock is in standalone Bluetooth mode; use local BLE key export.")
+
+    # Read live lock state & battery level from v2 deviceshadow
+    print(f"Is Locked     : {lock.is_locked}")
+    print(f"Battery Level : {lock.battery_percent}%")
+
+    # Generate temporary guest OTP PIN
+    otp = await lock.generate_guest_otp()
+    print(f"Guest PIN OTP : {otp.get('otp')}")
 ```
 
 #### Method B: Local BLE Offline Credentials (`⚠️ Experimental`)

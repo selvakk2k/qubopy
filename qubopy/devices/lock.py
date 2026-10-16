@@ -30,6 +30,17 @@ class QuboLock(QuboDevice):
     def is_locked(self) -> bool | None:
         """Return True if door is locked, False if unlocked, None if unknown."""
         rep = self.reported_state
+        raw_lock_state = _first_not_none(
+            rep, "lockState", "lockControl_lockState", "lockControl.lockState"
+        )
+        if raw_lock_state is None and isinstance(rep.get("lockControl"), dict):
+            raw_lock_state = rep["lockControl"].get("lockState")
+        if raw_lock_state is not None:
+            s = str(raw_lock_state).strip().lower()
+            if "unlock" in s:
+                return False
+            if "lock" in s:
+                return True
         raw_open = _first_not_none(rep, "isOpen", "open")
         if raw_open is not None:
             if isinstance(raw_open, str) and raw_open.strip().lower() in ("open", "opened"):
@@ -47,11 +58,24 @@ class QuboLock(QuboDevice):
     @property
     def battery_percent(self) -> int | None:
         """Return lock battery percentage (0-100)."""
-        val = _first_not_none(self.reported_state, "dpower", "battery")
+        rep = self.reported_state
+        val = _first_not_none(
+            rep,
+            "level",
+            "batteryStatus_level",
+            "batteryStatus.level",
+            "dpower",
+            "battery",
+        )
+        if val is None and isinstance(rep.get("batteryStatus"), dict):
+            val = rep["batteryStatus"].get("level")
         if val is None:
-            val = _first_not_none(self.info.extra_data, "dpower", "battery")
+            val = _first_not_none(self.info.extra_data, "dpower", "battery", "level")
         try:
-            return int(val) if val is not None else None
+            if val is not None:
+                digits = "".join(c for c in str(val) if c.isdigit())
+                return int(digits) if digits else None
+            return None
         except (ValueError, TypeError):
             return None
 
@@ -146,3 +170,41 @@ class QuboLock(QuboDevice):
             entity_uuid=self.entity_id,
             gateway_uuid=target_gw,
         )
+
+    async def fetch_live_lock_state(self) -> str | None:
+        """Fetch real-time lockState directly from v2/deviceshadow."""
+        if not self.client:
+            raise QuboCommandError("Device client not initialized")
+        resp = await self.client.get_device_shadow_v2(
+            self.device_id, service_name="lockControl", attribute_name="lockState"
+        )
+        val = resp.get("attributeValue") or resp.get("state")
+        if val is not None:
+            self.shadow.reported["lockState"] = val
+            return str(val)
+        return None
+
+    async def fetch_live_battery(self) -> int | None:
+        """Fetch real-time battery level directly from v2/deviceshadow."""
+        if not self.client:
+            raise QuboCommandError("Device client not initialized")
+        resp = await self.client.get_device_shadow_v2(
+            self.device_id, service_name="batteryStatus", attribute_name="level"
+        )
+        val = resp.get("attributeValue") or resp.get("level")
+        if val is not None:
+            try:
+                digits = "".join(c for c in str(val) if c.isdigit())
+                pct = int(digits) if digits else None
+                if pct is not None:
+                    self.shadow.reported["level"] = pct
+                    return pct
+            except (ValueError, TypeError):
+                pass
+        return None
+
+    async def generate_guest_otp(self) -> dict[str, Any]:
+        """Generate a temporary one-time keypad PIN code for guest access."""
+        if not self.client:
+            raise QuboCommandError("Device client not initialized")
+        return await self.client.generate_lock_otp(self.device_id)

@@ -3,6 +3,7 @@
 from typing import Any
 
 from qubopy.devices.base import QuboDevice, _as_bool, _first_not_none
+from qubopy.exceptions import QuboCommandError
 from qubopy.models import RtspStreamInfo
 
 
@@ -150,3 +151,28 @@ class QuboCamera(QuboDevice):
     async def set_siren(self, enabled: bool) -> dict[str, Any]:
         """Trigger or dismiss the deterrent siren."""
         return await self.send_command({"siren": enabled})
+
+    async def get_events(
+        self,
+        version: str = "v2",
+        start_time: int | None = None,
+        end_time: int | None = None,
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        """Fetch timeline events. Use version='v3' for direct media download URLs."""
+        if not self.client:
+            raise QuboCommandError("Device client not initialized")
+        return await self.client.get_device_events(
+            self.unit_id,
+            self.device_id,
+            version=version,
+            start_time=start_time,
+            end_time=end_time,
+            limit=limit,
+        )
+
+    async def get_storage_info(self) -> dict[str, Any]:
+        """Fetch SD card capacity, status, and partition diagnostics."""
+        if not self.client:
+            raise QuboCommandError("Device client not initialized")
+        return await self.client.get_device_storage(self.unit_id, self.device_id)

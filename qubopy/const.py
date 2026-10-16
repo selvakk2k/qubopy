@@ -36,6 +36,9 @@ PATH_GET_ALL_SHADOWS: str = "/unit-entity-management/api/v1/sp/{sp}/devices/shad
 PATH_GET_DEVICE_SHADOW: str = (
     "/unit-entity-management/api/v1/sp/{sp}/units/{unit_uuid}/entities/{entity_uuid}/devices/{device_uuid}/shadow"
 )
+PATH_GET_DEVICE_SHADOW_V2: str = (
+    "/unit-entity-management/api/v2/sp/{sp}/devices/{device_uuid}/deviceshadow"
+)
 
 # Control Paths
 PATH_SEND_COMMAND: str = (
@@ -54,6 +57,34 @@ PATH_P2P_CREDENTIALS: str = (
 )
 PATH_START_STREAM: str = (
     "/stream-manager/api/v1/sp/{sp}/stream/unit/{unit_uuid}/device/{device_uuid}"
+)
+PATH_DEVICE_EVENTS: str = (
+    "/content-manager/api/{v}/sp/{sp}/units/{unit_uuid}/devices/{device_uuid}/events"
+)
+PATH_DEVICE_STORAGE: str = (
+    "/control-monitor/api/v2/sp/{sp}/unit/{unit_uuid}/device/{device_uuid}/storage"
+)
+
+# Lock Guest OTP Path
+PATH_LOCK_OTP: str = (
+    "/roi-manager/api/v1/sp/{sp}/device/{device_uuid}/lock/pin/otp"
+)
+
+# Historical Energy & Telemetry Paths
+PATH_PLUG_ENERGY_HOUR: str = (
+    "/control-monitor/api/v1/sp/{sp}/device/{device_uuid}/energyMeasurementHourEvents"
+)
+PATH_PLUG_ENERGY_DAY: str = (
+    "/control-monitor/api/v1/sp/{sp}/device/{device_uuid}/energyMeasurementDayEvents"
+)
+PATH_PLUG_ENERGY_MONTH: str = (
+    "/control-monitor/api/v1/sp/{sp}/device/{device_uuid}/energyMeasurementMonthEvents"
+)
+PATH_PLUG_ENERGY_OVERALL: str = (
+    "/control-monitor/api/v1/sp/{sp}/device/{device_uuid}/energyMeasurementOverallData"
+)
+PATH_PURIFIER_PM25_INSIGHT: str = (
+    "/control-monitor/api/v1/sp/{sp}/unit/{unit_uuid}/device/{device_uuid}/airpurifier/pm25/dayInsight"
 )
 
 # Dynamic MQTT Password Path

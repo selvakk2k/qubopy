@@ -375,4 +375,107 @@ async def test_client_get_devices_for_unit_reraises_auth_error(sample_client):
     await sample_client.close()
 
 
+@pytest.mark.asyncio
+async def test_client_get_device_shadow_v2(sample_client):
+    """Verify get_device_shadow_v2 calls the v2 deviceshadow path with params."""
+    mock_resp = MockClientResponse(
+        200, json.dumps({"attributeValue": "unlocked", "timestamp": 123456789})
+    )
+    with patch("aiohttp.ClientSession.request", return_value=mock_resp) as mock_req:
+        res = await sample_client.get_device_shadow_v2(
+            "lock-123", service_name="lockControl", attribute_name="lockState"
+        )
+        assert res["attributeValue"] == "unlocked"
+        mock_req.assert_called_once()
+        call_url = mock_req.call_args[0][1]
+        assert "/api/v2/sp/" in call_url
+        assert "/devices/lock-123/deviceshadow" in call_url
+        assert mock_req.call_args[1]["params"] == {
+            "serviceName": "lockControl",
+            "attributeName": "lockState",
+        }
+
+    await sample_client.close()
+
+
+@pytest.mark.asyncio
+async def test_client_get_device_events(sample_client):
+    """Verify get_device_events supports v2 metadata and v3 video clip downloads."""
+    mock_resp_v2 = MockClientResponse(200, json.dumps({"events": [{"id": "ev1"}]}))
+    with patch("aiohttp.ClientSession.request", return_value=mock_resp_v2) as mock_req:
+        evs = await sample_client.get_device_events(
+            "unit-1", "cam-1", version="v2", limit=20
+        )
+        assert evs == [{"id": "ev1"}]
+        assert "/content-manager/api/v2/" in mock_req.call_args[0][1]
+        assert mock_req.call_args[1]["params"]["limit"] == 20
+
+    mock_resp_v3 = MockClientResponse(
+        200, json.dumps([{"id": "ev2", "downloadUrl": "https://s3/clip.mp4"}])
+    )
+    with patch("aiohttp.ClientSession.request", return_value=mock_resp_v3) as mock_req:
+        evs = await sample_client.get_device_events("unit-1", "cam-1", version="v3")
+        assert evs == [{"id": "ev2", "downloadUrl": "https://s3/clip.mp4"}]
+        assert "/content-manager/api/v3/" in mock_req.call_args[0][1]
+
+    await sample_client.close()
+
+
+@pytest.mark.asyncio
+async def test_client_generate_lock_otp(sample_client):
+    """Verify generate_lock_otp calls roi-manager POST endpoint."""
+    mock_resp = MockClientResponse(200, json.dumps({"otp": "987654", "validTill": 1728000}))
+    with patch("aiohttp.ClientSession.request", return_value=mock_resp) as mock_req:
+        res = await sample_client.generate_lock_otp("lock-123")
+        assert res["otp"] == "987654"
+        assert mock_req.call_args[0][0] == "POST"
+        assert "/roi-manager/api/v1/sp/" in mock_req.call_args[0][1]
+        assert "/device/lock-123/lock/pin/otp" in mock_req.call_args[0][1]
+
+    await sample_client.close()
+
+
+@pytest.mark.asyncio
+async def test_client_get_plug_energy_history(sample_client):
+    """Verify get_plug_energy_history routes period parameters to matching paths."""
+    mock_resp = MockClientResponse(200, json.dumps({"data": [{"kwh": 1.5}]}))
+    with patch("aiohttp.ClientSession.request", return_value=mock_resp) as mock_req:
+        res = await sample_client.get_plug_energy_history("plug-123", period="day")
+        assert res == {"data": [{"kwh": 1.5}]}
+        assert "energyMeasurementDayEvents" in mock_req.call_args[0][1]
+
+        await sample_client.get_plug_energy_history("plug-123", period="hour")
+        assert "energyMeasurementHourEvents" in mock_req.call_args[0][1]
+
+        await sample_client.get_plug_energy_history("plug-123", period="month")
+        assert "energyMeasurementMonthEvents" in mock_req.call_args[0][1]
+
+        await sample_client.get_plug_energy_history("plug-123", period="overall")
+        assert "energyMeasurementOverallData" in mock_req.call_args[0][1]
+
+    await sample_client.close()
+
+
+@pytest.mark.asyncio
+async def test_client_get_device_storage_and_purifier_insights(sample_client):
+    """Verify device storage and purifier PM2.5 insights endpoints."""
+    mock_resp_storage = MockClientResponse(
+        200, json.dumps({"status": "mounted", "available": 1000000})
+    )
+    with patch("aiohttp.ClientSession.request", return_value=mock_resp_storage) as mock_req:
+        storage = await sample_client.get_device_storage("unit-1", "cam-1")
+        assert storage["status"] == "mounted"
+        assert "/control-monitor/api/v2/" in mock_req.call_args[0][1]
+        assert "/storage" in mock_req.call_args[0][1]
+
+    mock_resp_pm25 = MockClientResponse(200, json.dumps({"avgPM25": 42}))
+    with patch("aiohttp.ClientSession.request", return_value=mock_resp_pm25) as mock_req:
+        insights = await sample_client.get_purifier_pm25_insights("unit-1", "pur-1")
+        assert insights["avgPM25"] == 42
+        assert "/airpurifier/pm25/dayInsight" in mock_req.call_args[0][1]
+
+    await sample_client.close()
+
+
+
 

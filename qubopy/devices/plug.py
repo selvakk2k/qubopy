@@ -3,6 +3,7 @@
 from typing import Any
 
 from qubopy.devices.base import QuboDevice, _as_bool, _first_not_none
+from qubopy.exceptions import QuboCommandError
 
 
 class QuboPlug(QuboDevice):
@@ -57,3 +58,11 @@ class QuboPlug(QuboDevice):
     async def turn_off(self) -> dict[str, Any]:
         """Switch the plug relay off."""
         return await self.send_command({"state": "OFF", "switch": False})
+
+    async def get_energy_history(
+        self, period: str = "day"
+    ) -> list[dict[str, Any]] | dict[str, Any]:
+        """Fetch historical energy metering data (hour, day, month, overall)."""
+        if not self.client:
+            raise QuboCommandError("Device client not initialized")
+        return await self.client.get_plug_energy_history(self.device_id, period=period)

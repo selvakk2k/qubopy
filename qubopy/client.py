@@ -11,9 +11,18 @@ from qubopy.auth import QuboAuth
 from qubopy.const import (
     DEFAULT_BASE_URL,
     DEFAULT_SP_ID,
+    PATH_DEVICE_EVENTS,
+    PATH_DEVICE_STORAGE,
     PATH_GET_ALL_SHADOWS,
     PATH_GET_DEVICE_SHADOW,
+    PATH_GET_DEVICE_SHADOW_V2,
     PATH_GET_DEVICES,
+    PATH_LOCK_OTP,
+    PATH_PLUG_ENERGY_DAY,
+    PATH_PLUG_ENERGY_HOUR,
+    PATH_PLUG_ENERGY_MONTH,
+    PATH_PLUG_ENERGY_OVERALL,
+    PATH_PURIFIER_PM25_INSIGHT,
     PATH_RTSP_SUPPORT,
     PATH_SEND_COMMAND,
     PATH_START_STREAM,
@@ -308,6 +317,105 @@ class QuboClient:
         )
         resp = await self.request("GET", path)
         return self._parse_shadow_payload(device_uuid, resp)
+
+    async def get_device_shadow_v2(
+        self,
+        device_uuid: str,
+        service_name: str | None = None,
+        attribute_name: str | None = None,
+    ) -> dict[str, Any]:
+        """Fetch v2 targeted device shadow or specific service/attribute."""
+        path = PATH_GET_DEVICE_SHADOW_V2.format(
+            sp=self.sp_id,
+            device_uuid=device_uuid,
+        )
+        params: dict[str, str] = {}
+        if service_name:
+            params["serviceName"] = service_name
+        if attribute_name:
+            params["attributeName"] = attribute_name
+        resp = await self.request("GET", path, params=params or None)
+        return resp if isinstance(resp, dict) else {"raw": resp}
+
+    async def get_device_events(
+        self,
+        unit_uuid: str,
+        device_uuid: str,
+        version: str = "v2",
+        start_time: int | None = None,
+        end_time: int | None = None,
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        """Fetch camera/doorbell/motion timeline events.
+
+        Pass version='v3' if account subscription has cloud clip download entitlements.
+        """
+        v_str = version if version in ("v2", "v3") else "v2"
+        path = PATH_DEVICE_EVENTS.format(
+            v=v_str,
+            sp=self.sp_id,
+            unit_uuid=unit_uuid,
+            device_uuid=device_uuid,
+        )
+        params: dict[str, Any] = {"limit": limit}
+        if start_time:
+            params["startTime"] = start_time
+        if end_time:
+            params["endTime"] = end_time
+        resp = await self.request("GET", path, params=params)
+        if isinstance(resp, list):
+            return resp
+        if isinstance(resp, dict):
+            return resp.get("events") or resp.get("data") or [resp]
+        return []
+
+    async def generate_lock_otp(self, device_uuid: str) -> dict[str, Any]:
+        """Generate a temporary one-time keypad guest PIN for a smart lock."""
+        path = PATH_LOCK_OTP.format(sp=self.sp_id, device_uuid=device_uuid)
+        resp = await self.request("POST", path)
+        return resp if isinstance(resp, dict) else {"raw": resp}
+
+    async def get_plug_energy_history(
+        self,
+        device_uuid: str,
+        period: str = "day",
+    ) -> list[dict[str, Any]] | dict[str, Any]:
+        """Fetch historical energy metering for smart plugs (hour, day, month, overall)."""
+        mapping = {
+            "hour": PATH_PLUG_ENERGY_HOUR,
+            "day": PATH_PLUG_ENERGY_DAY,
+            "month": PATH_PLUG_ENERGY_MONTH,
+            "overall": PATH_PLUG_ENERGY_OVERALL,
+        }
+        path_template = mapping.get(period.lower(), PATH_PLUG_ENERGY_DAY)
+        path = path_template.format(sp=self.sp_id, device_uuid=device_uuid)
+        return await self.request("GET", path)
+
+    async def get_device_storage(
+        self, unit_uuid: str, device_uuid: str
+    ) -> dict[str, Any]:
+        """Fetch SD card capacity, status, and partition diagnostics."""
+        path = PATH_DEVICE_STORAGE.format(
+            sp=self.sp_id,
+            unit_uuid=unit_uuid,
+            device_uuid=device_uuid,
+        )
+        resp = await self.request("GET", path)
+        return resp if isinstance(resp, dict) else {"raw": resp}
+
+    async def get_purifier_pm25_insights(
+        self,
+        unit_uuid: str,
+        device_uuid: str,
+    ) -> dict[str, Any]:
+        """Fetch daily PM2.5 particulate history for air purifiers."""
+        path = PATH_PURIFIER_PM25_INSIGHT.format(
+            sp=self.sp_id,
+            unit_uuid=unit_uuid,
+            device_uuid=device_uuid,
+        )
+        resp = await self.request("GET", path)
+        return resp if isinstance(resp, dict) else {"raw": resp}
 
     async def get_units(self) -> list[dict[str, Any]]:
         """Fetch all physical units (homes/sites) associated with the account."""

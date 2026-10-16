@@ -3,6 +3,7 @@
 from typing import Any
 
 from qubopy.devices.base import QuboDevice, _as_bool, _first_not_none
+from qubopy.exceptions import QuboCommandError
 
 
 class QuboAirPurifier(QuboDevice):
@@ -72,3 +73,9 @@ class QuboAirPurifier(QuboDevice):
     async def set_child_lock(self, enabled: bool) -> dict[str, Any]:
         """Enable or disable physical button child lock."""
         return await self.send_command({"child_lock": enabled})
+
+    async def get_pm25_insights(self) -> dict[str, Any]:
+        """Fetch daily PM2.5 particulate history and trends."""
+        if not self.client:
+            raise QuboCommandError("Device client not initialized")
+        return await self.client.get_purifier_pm25_insights(self.unit_id, self.device_id)

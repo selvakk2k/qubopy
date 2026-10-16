@@ -577,6 +577,117 @@ def test_is_gateway_device_matching():
     assert not is_gateway_device({"deviceModel": "HLM01", "deviceType": "SmartDoorLock"})
 
 
+@pytest.mark.asyncio
+async def test_lock_v2_lock_state_and_battery_attributes(sample_client):
+    """Verify QuboLock correctly resolves lockControl and batteryStatus attributes."""
+    info = DeviceModelInfo(uuid="lock-01", model="HLM01", deviceType="SmartDoorLock")
+
+    # 1. Nested dictionary format from v2 shadow / mobile app
+    shadow_nested = DeviceShadow(
+        device_uuid="lock-01",
+        reported={
+            "lockControl": {"lockState": "unlocked"},
+            "batteryStatus": {"level": "85"},
+        },
+    )
+    lock1 = QuboLock(info, sample_client, shadow_nested)
+    assert lock1.is_locked is False
+    assert lock1.battery_percent == 85
+
+    # 2. Locked state with percentage symbol in level
+    shadow_locked = DeviceShadow(
+        device_uuid="lock-01",
+        reported={
+            "lockControl": {"lockState": "locked"},
+            "batteryStatus": {"level": "90%"},
+        },
+    )
+    lock2 = QuboLock(info, sample_client, shadow_locked)
+    assert lock2.is_locked is True
+    assert lock2.battery_percent == 90
+
+    # 3. Flattened service attributes
+    shadow_flat = DeviceShadow(
+        device_uuid="lock-01",
+        reported={
+            "lockControl_lockState": "unlocked",
+            "batteryStatus_level": 75,
+        },
+    )
+    lock3 = QuboLock(info, sample_client, shadow_flat)
+    assert lock3.is_locked is False
+    assert lock3.battery_percent == 75
+
+    await sample_client.close()
+
+
+@pytest.mark.asyncio
+async def test_lock_live_fetch_and_otp_methods(sample_client):
+    """Verify fetch_live_lock_state, fetch_live_battery, and generate_guest_otp on QuboLock."""
+    info = DeviceModelInfo(uuid="lock-live", model="HLM01", deviceType="SmartDoorLock")
+    lock = QuboLock(info, sample_client)
+
+    sample_client.get_device_shadow_v2 = AsyncMock(
+        side_effect=[
+            {"attributeValue": "unlocked"},
+            {"attributeValue": "88%"},
+        ]
+    )
+    sample_client.generate_lock_otp = AsyncMock(return_value={"otp": "123456"})
+
+    st = await lock.fetch_live_lock_state()
+    assert st == "unlocked"
+    assert lock.is_locked is False
+    sample_client.get_device_shadow_v2.assert_called_with(
+        "lock-live", service_name="lockControl", attribute_name="lockState"
+    )
+
+    bat = await lock.fetch_live_battery()
+    assert bat == 88
+    assert lock.battery_percent == 88
+
+    otp_resp = await lock.generate_guest_otp()
+    assert otp_resp == {"otp": "123456"}
+    sample_client.generate_lock_otp.assert_called_with("lock-live")
+
+    await sample_client.close()
+
+
+@pytest.mark.asyncio
+async def test_device_extended_api_delegates(sample_client):
+    """Verify plug, purifier, and camera delegate to client methods."""
+    plug_info = DeviceModelInfo(uuid="plug-01", model="HSP01", deviceType="SmartPlug")
+    plug = QuboPlug(plug_info, sample_client)
+    sample_client.get_plug_energy_history = AsyncMock(return_value={"totalKwh": 10.5})
+    assert await plug.get_energy_history(period="month") == {"totalKwh": 10.5}
+    sample_client.get_plug_energy_history.assert_called_with("plug-01", period="month")
+
+    pur_info = DeviceModelInfo(
+        uuid="pur-01", model="HPH01", deviceType="AirPurifier", unitUUID="unit-pur"
+    )
+    pur = QuboAirPurifier(pur_info, sample_client)
+    sample_client.get_purifier_pm25_insights = AsyncMock(return_value={"avgPM25": 30})
+    assert await pur.get_pm25_insights() == {"avgPM25": 30}
+    sample_client.get_purifier_pm25_insights.assert_called_with("unit-pur", "pur-01")
+
+    cam_info = DeviceModelInfo(
+        uuid="cam-01", model="HCP01", deviceType="SmartCamera", unitUUID="unit-cam"
+    )
+    cam = QuboCamera(cam_info, sample_client)
+    sample_client.get_device_events = AsyncMock(return_value=[{"id": "ev-1"}])
+    sample_client.get_device_storage = AsyncMock(return_value={"status": "ok"})
+
+    assert await cam.get_events(version="v3") == [{"id": "ev-1"}]
+    sample_client.get_device_events.assert_called_with(
+        "unit-cam", "cam-01", version="v3", start_time=None, end_time=None, limit=50
+    )
+
+    assert await cam.get_storage_info() == {"status": "ok"}
+    sample_client.get_device_storage.assert_called_with("unit-cam", "cam-01")
+
+    await sample_client.close()
+
+
 def test_all_modules_have_docstrings():
     """Verify that every module under qubopy defines a non-empty module docstring."""
     assert qubopy.__doc__, "qubopy package root is missing a docstring"
