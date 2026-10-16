@@ -418,6 +418,9 @@ async def test_client_get_device_events(sample_client):
         assert evs == [{"id": "ev2", "downloadUrl": "https://s3/clip.mp4"}]
         assert "/content-manager/api/v3/" in mock_req.call_args[0][1]
 
+    with pytest.raises(ValueError, match="Unsupported device events version"):
+        await sample_client.get_device_events("unit-1", "cam-1", version="v4")
+
     await sample_client.close()
 
 
@@ -453,6 +456,9 @@ async def test_client_get_plug_energy_history(sample_client):
         await sample_client.get_plug_energy_history("plug-123", period="overall")
         assert "energyMeasurementOverallData" in mock_req.call_args[0][1]
 
+    with pytest.raises(ValueError, match="Unsupported energy history period"):
+        await sample_client.get_plug_energy_history("plug-123", period="invalid_period")
+
     await sample_client.close()
 
 
@@ -465,7 +471,7 @@ async def test_client_get_device_storage_and_purifier_insights(sample_client):
     with patch("aiohttp.ClientSession.request", return_value=mock_resp_storage) as mock_req:
         storage = await sample_client.get_device_storage("unit-1", "cam-1")
         assert storage["status"] == "mounted"
-        assert "/control-monitor/api/v2/" in mock_req.call_args[0][1]
+        assert "/control-monitor/api/v1/" in mock_req.call_args[0][1]
         assert "/storage" in mock_req.call_args[0][1]
 
     mock_resp_pm25 = MockClientResponse(200, json.dumps({"avgPM25": 42}))
@@ -515,27 +521,26 @@ async def test_client_initiate_p2p_call(sample_client):
 
 
 @pytest.mark.asyncio
-async def test_client_get_device_mqtt_credentials(sample_client):
-    """Verify get_device_mqtt_credentials calls the proper agent MQTT endpoint."""
-    creds_payload = {
-        "username": "user-uuid",
-        "password": "dynamic-mqtt-password",
-        "clientId": "device-1",
-        "serverUrl": "ssl://mqtt.platform.quboworld.com:8883",
-    }
-    mock_resp = MockClientResponse(200, json.dumps(creds_payload))
-    with patch("aiohttp.ClientSession.request", return_value=mock_resp) as mock_req:
-        res = await sample_client.get_device_mqtt_credentials(
-            unit_uuid="unit-1", device_uuid="device-1"
-        )
-        assert res["username"] == "user-uuid"
-        assert res["password"] == "dynamic-mqtt-password"
-        assert res["serverUrl"] == "ssl://mqtt.platform.quboworld.com:8883"
+async def test_client_get_ooi_and_lock_events(sample_client):
+    """Verify get_ooi_events and get_lock_events call control-monitor endpoints."""
+    mock_resp_ooi = MockClientResponse(
+        200, json.dumps({"events": [{"id": "ooi-1", "type": "person"}]})
+    )
+    with patch("aiohttp.ClientSession.request", return_value=mock_resp_ooi) as mock_req:
+        res = await sample_client.get_ooi_events(unit_uuid="unit-1", limit=10)
+        assert res == [{"id": "ooi-1", "type": "person"}]
+        assert "/control-monitor/api/v1/sp/" in mock_req.call_args[0][1]
+        assert "/unit/unit-1/ooi-events" in mock_req.call_args[0][1]
+        assert mock_req.call_args[1]["params"]["limit"] == 10
 
-        mock_req.assert_called_once()
-        method, url = mock_req.call_args[0][:2]
-        assert method == "GET"
-        assert "/agent/device/mqtt/unit/unit-1/device/device-1" in url
+    mock_resp_lock = MockClientResponse(
+        200, json.dumps([{"id": "le-1", "action": "manual_unlock"}])
+    )
+    with patch("aiohttp.ClientSession.request", return_value=mock_resp_lock) as mock_req:
+        res_lock = await sample_client.get_lock_events(device_uuid="lock-1")
+        assert res_lock == [{"id": "le-1", "action": "manual_unlock"}]
+        assert "/control-monitor/api/v1/sp/" in mock_req.call_args[0][1]
+        assert "/device/lock-1/event" in mock_req.call_args[0][1]
 
     await sample_client.close()
 

@@ -120,6 +120,11 @@ class QuboAuth:
         return self._tokens.user_uuid if self._tokens else None
 
     @property
+    def mqtt_password(self) -> str | None:
+        """Return persistent MQTT broker password for the user, if provided by cloud."""
+        return self._tokens.mqtt_password if self._tokens else None
+
+    @property
     def tokens(self) -> TokenPayload | None:
         """Return current token payload."""
         return self._tokens
@@ -130,6 +135,7 @@ class QuboAuth:
         refresh_token: str | None = None,
         user_uuid: str = "",
         expires_at: float | None = None,
+        mqtt_password: str | None = None,
     ) -> TokenPayload:
         """Manually configure cached credentials."""
         if expires_at is None:
@@ -142,6 +148,7 @@ class QuboAuth:
             accessToken=access_token,
             refreshToken=refresh_token,
             uuid=user_uuid,
+            mqttPassword=mqtt_password,
             expires_at=expires_at,
         )
         return self._tokens
@@ -206,10 +213,12 @@ class QuboAuth:
         refresh_token = data.get("refreshToken")
         expires_at = _decode_jwt_expiry(access_token) or (time.time() + 86400)
 
+        mqtt_password = data.get("mqttPassword")
         self._tokens = TokenPayload(
             accessToken=access_token,
             refreshToken=refresh_token,
             uuid=str(user_uuid),
+            mqttPassword=mqtt_password,
             expires_at=expires_at,
         )
         return self._tokens
@@ -350,10 +359,12 @@ class QuboAuth:
         refresh_token = selected_profile.get("refreshToken")
         expires_at = _decode_jwt_expiry(access_token) or (time.time() + 86400)
 
+        mqtt_password = selected_profile.get("mqttPassword")
         self._tokens = TokenPayload(
             accessToken=access_token,
             refreshToken=refresh_token,
             uuid=str(user_uuid),
+            mqttPassword=mqtt_password,
             expires_at=expires_at,
         )
         return self._tokens
@@ -448,10 +459,12 @@ class QuboAuth:
             new_refresh_token = data.get("refreshToken") or self._tokens.refresh_token
             expires_at = _decode_jwt_expiry(new_access_token) or (time.time() + 86400)
 
+            mqtt_password = data.get("mqttPassword") or self._tokens.mqtt_password
             self._tokens = TokenPayload(
                 accessToken=new_access_token,
                 refreshToken=new_refresh_token,
                 uuid=self._tokens.user_uuid,
+                mqttPassword=mqtt_password,
                 expires_at=expires_at,
             )
             return self._tokens

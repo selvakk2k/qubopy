@@ -3,7 +3,12 @@
 import logging
 from typing import Any
 
-from qubopy.devices.base import QuboDevice, _as_bool, _first_not_none
+from qubopy.devices.base import (
+    QuboDevice,
+    _as_bool,
+    _first_not_none,
+    _parse_battery_level,
+)
 from qubopy.exceptions import QuboCommandError, QuboKeyExtractionError
 from qubopy.models import BleLockCredentials
 
@@ -12,6 +17,10 @@ _LOGGER = logging.getLogger(__name__)
 
 class QuboLock(QuboDevice):
     """Qubo Smart Door Lock (HLM01-10, HLW01, HLR01)."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self._last_lock_state_timestamp: int | None = None
 
     @property
     def gateway_id(self) -> str | None:
@@ -25,7 +34,6 @@ class QuboLock(QuboDevice):
         """Return True if an in-home RF/BLE gateway is paired for cloud actuation."""
         return bool(self.gateway_id)
 
-
     @property
     def is_locked(self) -> bool | None:
         """Return True if door is locked, False if unlocked, None if unknown."""
@@ -37,10 +45,15 @@ class QuboLock(QuboDevice):
             raw_lock_state = rep["lockControl"].get("lockState")
         if raw_lock_state is not None:
             s = str(raw_lock_state).strip().lower()
-            if "unlock" in s:
-                return False
-            if "lock" in s:
-                return True
+            state_map = {
+                "locked": True,
+                "lock": True,
+                "unlocked": False,
+                "unlock": False,
+            }
+            if s in state_map:
+                return state_map[s]
+            return None
         raw_open = _first_not_none(rep, "isOpen", "open")
         if raw_open is not None:
             if isinstance(raw_open, str) and raw_open.strip().lower() in ("open", "opened"):
@@ -71,13 +84,7 @@ class QuboLock(QuboDevice):
             val = rep["batteryStatus"].get("level")
         if val is None:
             val = _first_not_none(self.info.extra_data, "dpower", "battery", "level")
-        try:
-            if val is not None:
-                digits = "".join(c for c in str(val) if c.isdigit())
-                return int(digits) if digits else None
-            return None
-        except (ValueError, TypeError):
-            return None
+        return _parse_battery_level(val)
 
     def _extract_field(self, *keys: str) -> Any | None:
         """Search for a key across info.extra_data, shadow.reported, and shadow.raw."""
@@ -171,6 +178,11 @@ class QuboLock(QuboDevice):
             gateway_uuid=target_gw,
         )
 
+    @property
+    def last_lock_state_timestamp(self) -> int | None:
+        """Return the Unix timestamp (milliseconds) of the last fetched live lockState."""
+        return self._last_lock_state_timestamp
+
     async def fetch_live_lock_state(self) -> str | None:
         """Fetch real-time lockState directly from v2/deviceshadow."""
         if not self.client:
@@ -178,7 +190,22 @@ class QuboLock(QuboDevice):
         resp = await self.client.get_device_shadow_v2(
             self.device_id, service_name="lockControl", attribute_name="lockState"
         )
-        val = resp.get("attributeValue") or resp.get("state")
+        val = resp.get("attributeValue")
+        if val is None:
+            val = resp.get("state")
+
+        raw_ts = resp.get("timestamp")
+        if raw_ts is not None:
+            try:
+                ts_int = int(raw_ts)
+                # If 10 digits or fewer (seconds), convert to milliseconds
+                if 0 < ts_int < 100_000_000_000:
+                    ts_int *= 1000
+                self._last_lock_state_timestamp = ts_int
+                self.shadow.reported["lockState_timestamp"] = ts_int
+            except (ValueError, TypeError):
+                pass
+
         if val is not None:
             self.shadow.reported["lockState"] = val
             return str(val)
@@ -191,16 +218,13 @@ class QuboLock(QuboDevice):
         resp = await self.client.get_device_shadow_v2(
             self.device_id, service_name="batteryStatus", attribute_name="level"
         )
-        val = resp.get("attributeValue") or resp.get("level")
-        if val is not None:
-            try:
-                digits = "".join(c for c in str(val) if c.isdigit())
-                pct = int(digits) if digits else None
-                if pct is not None:
-                    self.shadow.reported["level"] = pct
-                    return pct
-            except (ValueError, TypeError):
-                pass
+        val = resp.get("attributeValue")
+        if val is None:
+            val = resp.get("level")
+        pct = _parse_battery_level(val)
+        if pct is not None:
+            self.shadow.reported["level"] = pct
+            return pct
         return None
 
     async def generate_guest_otp(self) -> dict[str, Any]:

@@ -3,7 +3,6 @@
 import logging
 from typing import TYPE_CHECKING, Any
 
-from qubopy.exceptions import QuboCommandError
 from qubopy.models import DeviceModelInfo, DeviceShadow
 
 if TYPE_CHECKING:
@@ -41,6 +40,25 @@ def _as_bool(val: Any) -> bool | None:
         _LOGGER.debug("Unrecognized boolean string value: %r", val)
         return None
     return None
+
+
+def _parse_battery_level(val: Any) -> int | None:
+    """Safely parse battery percentage from int, float, or string and clamp 0-100."""
+    if val is None:
+        return None
+    try:
+        if isinstance(val, (int, float)):
+            pct = int(round(val))
+        elif isinstance(val, str):
+            clean = val.strip().rstrip("%").strip()
+            if not clean:
+                return None
+            pct = int(round(float(clean)))
+        else:
+            return None
+        return max(0, min(100, pct))
+    except (ValueError, TypeError):
+        return None
 
 
 class QuboDevice:
@@ -135,12 +153,6 @@ class QuboDevice:
             }
         }
         return await self.update_attribute(payload)
-
-    async def get_mqtt_credentials(self) -> dict[str, Any]:
-        """Fetch dynamic MQTT broker connection credentials for this device."""
-        if not self.client:
-            raise QuboCommandError("Device client not initialized")
-        return await self.client.get_device_mqtt_credentials(self.unit_id, self.device_id)
 
     def __repr__(self) -> str:
         cls_name = self.__class__.__name__

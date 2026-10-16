@@ -171,6 +171,22 @@ class QuboCamera(QuboDevice):
             limit=limit,
         )
 
+    async def get_ooi_events(
+        self,
+        start_time: int | None = None,
+        end_time: int | None = None,
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        """Fetch Object of Interest (OOI) motion and detection events from control-monitor."""
+        if not self.client:
+            raise QuboCommandError("Device client not initialized")
+        return await self.client.get_ooi_events(
+            self.unit_id,
+            start_time=start_time,
+            end_time=end_time,
+            limit=limit,
+        )
+
     async def get_storage_info(self) -> dict[str, Any]:
         """Fetch SD card capacity, status, and partition diagnostics."""
         if not self.client:
@@ -183,10 +199,10 @@ class QuboCamera(QuboDevice):
         local_port: int = 49700,
         quality: str = "high",
     ) -> dict[str, Any]:
-        """Initiate a direct local P2P streaming session over UDP.
+        """Initiate a direct local P2P streaming session over UDP (Experimental).
 
-        Returns negotiated session ID and AES-128-GCM keys for decrypting the
-        incoming RTP/H.264 stream.
+        Returns negotiated session ID and signaling offer parameters.
+        Packet-level payload encryption framing is reverse-engineered and unverified.
         """
         if not self.client:
             raise QuboCommandError("Device client not initialized")

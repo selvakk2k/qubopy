@@ -1,6 +1,11 @@
 """Environmental and security sensor device abstraction (HDS, HGS, HSA, HDT)."""
 
-from qubopy.devices.base import QuboDevice, _as_bool, _first_not_none
+from qubopy.devices.base import (
+    QuboDevice,
+    _as_bool,
+    _first_not_none,
+    _parse_battery_level,
+)
 
 
 class QuboSensor(QuboDevice):
@@ -46,7 +51,4 @@ class QuboSensor(QuboDevice):
     def battery_percent(self) -> int | None:
         """Return sensor battery level (0-100)."""
         val = _first_not_none(self.reported_state, "battery", "power")
-        try:
-            return int(val) if val is not None else None
-        except (ValueError, TypeError):
-            return None
+        return _parse_battery_level(val)

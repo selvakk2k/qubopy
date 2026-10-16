@@ -652,7 +652,7 @@ async def test_lock_live_fetch_and_otp_methods(sample_client):
 
     sample_client.get_device_shadow_v2 = AsyncMock(
         side_effect=[
-            {"attributeValue": "unlocked"},
+            {"attributeValue": "unlocked", "timestamp": 1700000000},
             {"attributeValue": "88%"},
         ]
     )
@@ -661,6 +661,7 @@ async def test_lock_live_fetch_and_otp_methods(sample_client):
     st = await lock.fetch_live_lock_state()
     assert st == "unlocked"
     assert lock.is_locked is False
+    assert lock.last_lock_state_timestamp == 1700000000000
     sample_client.get_device_shadow_v2.assert_called_with(
         "lock-live", service_name="lockControl", attribute_name="lockState"
     )
@@ -810,20 +811,43 @@ def test_rtsp_stream_info_alias():
 
 
 @pytest.mark.asyncio
-async def test_device_get_mqtt_credentials(sample_client):
-    """Verify device.get_mqtt_credentials delegates to client."""
-    info = DeviceModelInfo(uuid="dev-mqtt-1", unitUUID="unit-1", model="HSP01")
-    dev = QuboPlug(info, sample_client)
-    sample_client.get_device_mqtt_credentials = AsyncMock(
-        return_value={"serverUrl": "ssl://mqtt.platform.quboworld.com:8883"}
-    )
-    res = await dev.get_mqtt_credentials()
-    assert res["serverUrl"] == "ssl://mqtt.platform.quboworld.com:8883"
-    sample_client.get_device_mqtt_credentials.assert_called_with("unit-1", "dev-mqtt-1")
+async def test_lock_state_in_transit_and_battery_edge_cases(sample_client):
+    """Verify in-transit states return None and battery handles 0, decimals, and clamping."""
+    info = DeviceModelInfo(uuid="lock-transit", model="HLM01", deviceType="SmartDoorLock")
+    lock = QuboLock(info, sample_client)
 
-    dev_no_client = QuboPlug(info, None)
-    with pytest.raises(QuboCommandError):
-        await dev_no_client.get_mqtt_credentials()
+    # In-transit states must return None, not True or False
+    lock.shadow.reported["lockState"] = "unlocking"
+    assert lock.is_locked is None
+
+    lock.shadow.reported["lockState"] = "locking"
+    assert lock.is_locked is None
+
+    lock.shadow.reported["lockState"] = "locked"
+    assert lock.is_locked is True
+
+    # Battery reading of 0 must be preserved, not dropped
+    sample_client.get_device_shadow_v2 = AsyncMock(
+        side_effect=[
+            {"attributeValue": 0},
+            {"attributeValue": "87.5%"},
+            {"attributeValue": 150},
+            {"attributeValue": -10},
+        ]
+    )
+    bat0 = await lock.fetch_live_battery()
+    assert bat0 == 0
+    assert lock.battery_percent == 0
+
+    bat_dec = await lock.fetch_live_battery()
+    assert bat_dec == 88
+    assert lock.battery_percent == 88
+
+    bat_over = await lock.fetch_live_battery()
+    assert bat_over == 100
+
+    bat_under = await lock.fetch_live_battery()
+    assert bat_under == 0
 
     await sample_client.close()
 

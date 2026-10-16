@@ -22,6 +22,7 @@ async def test_email_login_success():
         ),
         "refreshToken": "refresh-token-xyz",
         "uuid": "user-999",
+        "mqttPassword": "persistent-mqtt-secret",
     }
 
     mock_resp = MockClientResponse(200, json.dumps(response_payload))
@@ -31,8 +32,10 @@ async def test_email_login_success():
         assert tokens.access_token == response_payload["accessToken"]
         assert tokens.refresh_token == "refresh-token-xyz"
         assert tokens.user_uuid == "user-999"
+        assert tokens.mqtt_password == "persistent-mqtt-secret"
         assert auth.is_authenticated is True
         assert auth.user_uuid == "user-999"
+        assert auth.mqtt_password == "persistent-mqtt-secret"
         args, kwargs = mock_post.call_args
         assert kwargs["headers"]["App-Id"] == "com.hero.iot"
         assert kwargs["headers"]["Source"] == "USER"

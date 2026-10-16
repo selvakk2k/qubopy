@@ -65,7 +65,13 @@ PATH_DEVICE_EVENTS: str = (
     "/content-manager/api/{v}/sp/{sp}/units/{unit_uuid}/devices/{device_uuid}/events"
 )
 PATH_DEVICE_STORAGE: str = (
-    "/control-monitor/api/v2/sp/{sp}/unit/{unit_uuid}/device/{device_uuid}/storage"
+    "/control-monitor/api/v1/sp/{sp}/unit/{unit_uuid}/device/{device_uuid}/storage"
+)
+PATH_OOI_EVENTS: str = (
+    "/control-monitor/api/v1/sp/{sp}/unit/{unit_uuid}/ooi-events"
+)
+PATH_LOCK_EVENTS: str = (
+    "/control-monitor/api/v1/sp/{sp}/device/{device_uuid}/event"
 )
 
 # Lock Guest OTP Path
@@ -88,11 +94,6 @@ PATH_PLUG_ENERGY_OVERALL: str = (
 )
 PATH_PURIFIER_PM25_INSIGHT: str = (
     "/control-monitor/api/v1/sp/{sp}/unit/{unit_uuid}/device/{device_uuid}/airpurifier/pm25/dayInsight"
-)
-
-# Dynamic MQTT Password Path
-PATH_MQTT_CREDENTIALS: str = (
-    "/unit-entity-management/api/v1/sp/{sp}/agent/device/mqtt/unit/{unit_uuid}/device/{device_uuid}"
 )
 
 # Hardware Family Model Prefixes

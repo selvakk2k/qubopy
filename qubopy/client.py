@@ -19,8 +19,9 @@ from qubopy.const import (
     PATH_GET_DEVICE_SHADOW,
     PATH_GET_DEVICE_SHADOW_V2,
     PATH_GET_DEVICES,
+    PATH_LOCK_EVENTS,
     PATH_LOCK_OTP,
-    PATH_MQTT_CREDENTIALS,
+    PATH_OOI_EVENTS,
     PATH_P2P_CALL,
     PATH_PLUG_ENERGY_DAY,
     PATH_PLUG_ENERGY_HOUR,
@@ -350,17 +351,63 @@ class QuboClient:
         end_time: int | None = None,
         limit: int = 50,
     ) -> list[dict[str, Any]]:
-        """Fetch camera/doorbell/motion timeline events.
+        """Fetch camera/doorbell timeline events.
 
         Pass version='v3' if account subscription has cloud clip download entitlements.
         """
-        v_str = version if version in ("v2", "v3") else "v2"
+        v_str = version.lower()
+        if v_str not in ("v2", "v3"):
+            raise ValueError(
+                f"Unsupported device events version '{version}'. Expected 'v2' or 'v3'."
+            )
         path = PATH_DEVICE_EVENTS.format(
             v=v_str,
             sp=self.sp_id,
             unit_uuid=unit_uuid,
             device_uuid=device_uuid,
         )
+        params: dict[str, Any] = {"limit": limit}
+        if start_time:
+            params["startTime"] = start_time
+        if end_time:
+            params["endTime"] = end_time
+        resp = await self.request("GET", path, params=params)
+        if isinstance(resp, list):
+            return resp
+        if isinstance(resp, dict):
+            return resp.get("events") or resp.get("data") or [resp]
+        return []
+
+    async def get_ooi_events(
+        self,
+        unit_uuid: str,
+        start_time: int | None = None,
+        end_time: int | None = None,
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        """Fetch Object of Interest (OOI) camera detection events from control-monitor."""
+        path = PATH_OOI_EVENTS.format(sp=self.sp_id, unit_uuid=unit_uuid)
+        params: dict[str, Any] = {"limit": limit}
+        if start_time:
+            params["startTime"] = start_time
+        if end_time:
+            params["endTime"] = end_time
+        resp = await self.request("GET", path, params=params)
+        if isinstance(resp, list):
+            return resp
+        if isinstance(resp, dict):
+            return resp.get("events") or resp.get("data") or [resp]
+        return []
+
+    async def get_lock_events(
+        self,
+        device_uuid: str,
+        start_time: int | None = None,
+        end_time: int | None = None,
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        """Fetch lock operation audit events from control-monitor."""
+        path = PATH_LOCK_EVENTS.format(sp=self.sp_id, device_uuid=device_uuid)
         params: dict[str, Any] = {"limit": limit}
         if start_time:
             params["startTime"] = start_time
@@ -391,8 +438,13 @@ class QuboClient:
             "month": PATH_PLUG_ENERGY_MONTH,
             "overall": PATH_PLUG_ENERGY_OVERALL,
         }
-        path_template = mapping.get(period.lower(), PATH_PLUG_ENERGY_DAY)
-        path = path_template.format(sp=self.sp_id, device_uuid=device_uuid)
+        period_clean = period.lower()
+        if period_clean not in mapping:
+            supported = list(mapping.keys())
+            raise ValueError(
+                f"Unsupported energy history period '{period}'. Expected one of: {supported}"
+            )
+        path = mapping[period_clean].format(sp=self.sp_id, device_uuid=device_uuid)
         return await self.request("GET", path)
 
     async def get_device_storage(
@@ -414,18 +466,6 @@ class QuboClient:
     ) -> dict[str, Any]:
         """Fetch daily PM2.5 particulate history for air purifiers."""
         path = PATH_PURIFIER_PM25_INSIGHT.format(
-            sp=self.sp_id,
-            unit_uuid=unit_uuid,
-            device_uuid=device_uuid,
-        )
-        resp = await self.request("GET", path)
-        return resp if isinstance(resp, dict) else {"raw": resp}
-
-    async def get_device_mqtt_credentials(
-        self, unit_uuid: str, device_uuid: str
-    ) -> dict[str, Any]:
-        """Fetch dynamic MQTT broker connection credentials for a device."""
-        path = PATH_MQTT_CREDENTIALS.format(
             sp=self.sp_id,
             unit_uuid=unit_uuid,
             device_uuid=device_uuid,
@@ -548,10 +588,11 @@ class QuboClient:
         aes_key: bytes | None = None,
         aes_iv: bytes | None = None,
     ) -> dict[str, Any]:
-        """Initiate a direct local P2P streaming session with a camera or doorbell.
+        """Initiate a direct local P2P streaming session with a camera or doorbell (Experimental).
 
-        Mints ephemeral AES-128-GCM session keys, dispatches the signaling offer, and
-        returns the cryptographic parameters needed to decrypt the inbound UDP/RTP stream.
+        Dispatches signaling offer with session keys and candidate IP:port.
+        Note: Exact inbound packet payload framing and encryption format are unverified
+        on physical hardware.
         """
         key = aes_key or os.urandom(16)
         iv = aes_iv or os.urandom(16)

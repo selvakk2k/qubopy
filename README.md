@@ -326,6 +326,10 @@ async def operate_camera(camera: QuboCamera):
     events = await camera.get_events(version="v2", limit=10)
     print(f"Recent events count: {len(events)}")
 
+    # Fetch Object of Interest (OOI) motion detection events
+    ooi_events = await camera.get_ooi_events(limit=10)
+    print(f"Recent OOI detections: {len(ooi_events)}")
+
     # Inspect SD card storage status and capacity
     storage = await camera.get_storage_info()
     print(f"Storage Status: {storage.get('status')}")
@@ -348,15 +352,17 @@ print(f"RTSPS Stream URL: {stream_url}")
 > [!NOTE]
 > Cloud Wowza URLs are single-consumer sessions. Opening the stream in a media player or restreaming software terminates any active stream session using the same token.
 
-##### 2. Local Peer-to-Peer (P2P) UDP Streaming (`camera.initiate_p2p_call()`)
+##### 2. Local Peer-to-Peer (P2P) UDP Streaming (`camera.initiate_p2p_call()`) (`⚠️ Experimental`)
+
+> [!WARNING]
+> **Experimental / Hardware Unverified**: While the P2P signaling offer structure is reverse-engineered from application binaries, packet-level payload decryption framing and streaming continuity have not been verified on physical hardware.
 
 Qubo cameras do not expose an unauthenticated LAN RTSP port. Instead, the camera uses a direct UDP streaming protocol negotiated via the Qubo cloud signaling gateway:
 
 * **Signaling**: The client generates a 16-byte `aesKey` and 16-byte `aesIV`, then posts a local UDP candidate (`<local_ip>:<local_port>`) to `/stream-manager/api/v2/sp/{sp}/unit/{unit_uuid}/device/{device_uuid}/p2pCall`.
 * **Transport**: The camera sends raw RTP packets over UDP directly to the client's listening IP and port.
 * **Payload Types**: Video uses Dynamic PT `96` (H.264 elementary stream); two-way audio uses PT `97`.
-* **Decryption**: RTP payload bytes are encrypted using AES-128-GCM with the negotiated session key and IV. The 16-byte GCM authentication tag is appended to each UDP packet.
-* **ICE/STUN Handshake**: An initial ICE/STUN Binding Request (magic cookie `0x2112A442`) with username `0x70` ("check B") triggers immediate media transmission from the camera.
+* **ICE/STUN Handshake**: An initial ICE/STUN Binding Request (magic cookie `0x2112A442`) with username `0x70` ("check B") triggers media transmission from the camera.
 
 ```python
 # Negotiate local P2P session directly to your media receiver (e.g. Home Assistant or go2rtc server)
@@ -455,6 +461,7 @@ async def unlock_door(lock: QuboLock):
     live_state = await lock.fetch_live_lock_state()
     live_battery = await lock.fetch_live_battery()
     print(f"Live Lock State : {live_state} (is_locked: {lock.is_locked})")
+    print(f"State Timestamp : {lock.last_lock_state_timestamp} ms")
     print(f"Live Battery    : {live_battery}% (cached: {lock.battery_percent}%)")
 
     # Generate temporary guest OTP PIN
@@ -703,7 +710,7 @@ if __name__ == "__main__":
 
 ## Cloud MQTT Broker & Real-Time Telemetry
 
-In addition to REST-based control, the Qubo ecosystem operates a cloud MQTT broker for real-time telemetry streaming and sub-second push notifications.
+In addition to REST-based control, the Qubo platform operates an MQTT broker for real-time telemetry streaming and sub-second push notifications.
 
 ### 1. Broker Connection Parameters
 
@@ -712,46 +719,29 @@ In addition to REST-based control, the Qubo ecosystem operates a cloud MQTT brok
 * **Protocol**: TLS / SSL (`ssl://`)
 * **Transport**: TCP over TLS with standard server certificate verification
 
-### 2. Dynamic Credential Provisioning
+### 2. User & Device Authentication
 
-The MQTT broker does not use static passwords. Clients provision dynamic MQTT credentials by calling the authenticated REST endpoint:
+The Qubo MQTT broker authenticates using persistent credentials issued by the cloud during user login:
 
-```http
-GET /unit-entity-management/api/v1/sp/d10e4bfb0153496e8e8bb955f7ebe413/agent/device/mqtt/unit/{unit_uuid}/device/{device_uuid}
-```
+* **Username**: The account user UUID (`auth.user_uuid`).
+* **Password**: The persistent account MQTT secret returned during login (`auth.mqtt_password`).
+* **Client ID**: The registered mobile or application device identifier (`auth.device_id`).
 
-The response provides the dynamic broker credentials:
-
-```json
-{
-  "username": "<user_uuid>",
-  "password": "<dynamic_mqtt_session_secret>",
-  "clientId": "<client_or_device_uuid>",
-  "serverUrl": "ssl://mqtt.platform.quboworld.com:8883"
-}
-```
-
-#### Python Example: Fetching Dynamic MQTT Credentials
+#### Python Example: Accessing Authenticated MQTT Credentials
 
 ```python
 import asyncio
-from qubopy import QuboAuth, QuboClient
+from qubopy import QuboAuth
 
 async def main():
     auth = QuboAuth()
     await auth.login_with_email("<email>", "<password>")
 
-    async with QuboClient(auth) as client:
-        devices = await client.get_all_devices()
-        if devices:
-            dev = devices[0]
-            # Fetch dynamic MQTT broker credentials for the device
-            mqtt_creds = await dev.get_mqtt_credentials()
-            print("Dynamic MQTT Credentials:")
-            print(f"  Broker Server : {mqtt_creds.get('serverUrl')}")
-            print(f"  Username      : {mqtt_creds.get('username')}")
-            print(f"  Password      : {mqtt_creds.get('password')}")
-            print(f"  Client ID     : {mqtt_creds.get('clientId')}")
+    print("MQTT Broker Connection Parameters:")
+    print("  Broker Server : ssl://mqtt.platform.quboworld.com:8883")
+    print(f"  Username      : {auth.user_uuid}")
+    print(f"  Password      : {auth.mqtt_password}")
+    print(f"  Client ID     : {auth.device_id}")
 
 asyncio.run(main())
 ```
@@ -762,9 +752,8 @@ Once authenticated over TLS, clients subscribe to specific event streams:
 
 | Stream Type | Topic Pattern | Description |
 | :--- | :--- | :--- |
-| **User Push Events** | `/users/{user_uuid}/events` | Real-time push events for doorbell presses, motion detection, and security alarms. |
-| **Device Telemetry** | `units/{unit_uuid}/devices/{device_uuid}/status` | Live attribute reports including plug power (W), air purifier PM2.5, and sensor metrics. |
-| **Command Channel** | `units/{unit_uuid}/devices/{device_uuid}/command` | Asynchronous command publication channel for cloud-relayed actuation. |
+| **Unit Monitor / Events** | `/monitor/{unit_uuid}/#` | Real-time push events for sensor trips, motion detections, doorbell rings, and lock status changes. |
+| **Device Control Channel** | `/control/{unit_uuid}/{device_uuid}/{service_name}` | Command publication channel for cloud-relayed actuation and attribute updates. |
 
 ---
 
