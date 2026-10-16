@@ -549,8 +549,138 @@ async def test_mqtt_reconnect_mobile_phone_otp_expired_token() -> None:
         assert listener.is_running is False
         assert auth_failure_called.is_set()
         mock_client.reconnect.assert_not_called()
+        mock_client.disconnect.assert_called_once()
+        mock_client.loop_stop.assert_called_once()
 
         await listener.stop()
+
+
+@pytest.mark.asyncio
+async def test_mqtt_reconnect_broker_rejected_credentials() -> None:
+    """Verify broker credential rejection on reconnect halts listener and invokes
+    on_auth_failure.
+    """
+    auth = QuboAuth()
+    auth._tokens = TokenPayload(access_token="initial_token", user_uuid="user-1")
+    auth.get_valid_access_token = AsyncMock(return_value="initial_token")  # type: ignore[method-assign]
+
+    auth_failure_called = asyncio.Event()
+
+    async def on_auth_failure() -> None:
+        auth_failure_called.set()
+
+    listener = QuboMqttListener(auth, unit_uuid="unit-1", on_auth_failure=on_auth_failure)
+    mock_client = _create_mock_mqtt_client(on_connect_rc=0)
+
+    with patch("paho.mqtt.client.Client", return_value=mock_client):
+        await listener.start()
+        assert listener.is_running is True
+
+        # Now simulate broker rejecting reconnect with rc=135 (Not authorized)
+        on_connect = mock_client.on_connect
+        on_connect(mock_client, None, {}, 135)
+
+        # Allow loop tasks to execute
+        await asyncio.sleep(0.05)
+
+        assert listener.is_running is False
+        assert auth_failure_called.is_set()
+        mock_client.disconnect.assert_called()
+        mock_client.loop_stop.assert_called()
+
+
+@pytest.mark.asyncio
+async def test_real_paho_mqtt_client_initialization() -> None:
+    """Verify real paho.mqtt.client.Client instantiates with reconnect_on_failure=False."""
+    import paho.mqtt.client as mqtt
+
+    auth = QuboAuth()
+    auth._tokens = TokenPayload(access_token="test_token", user_uuid="user-real-paho")
+    auth.get_valid_access_token = AsyncMock(return_value="test_token")  # type: ignore[method-assign]
+
+    listener = QuboMqttListener(auth, unit_uuid="unit-real", client_id="real_client_id")
+
+    connected_args = []
+
+    def fake_connect(self_c: Any, host: str, port: int, keepalive: int = 60) -> int:
+        connected_args.append((host, port, keepalive))
+        if self_c.on_connect:
+            self_c.on_connect(self_c, None, {}, 0)
+        return 0
+
+    with (
+        patch.object(mqtt.Client, "connect", fake_connect),
+        patch.object(mqtt.Client, "loop_start"),
+        patch.object(mqtt.Client, "loop_stop"),
+        patch.object(mqtt.Client, "disconnect"),
+        patch.object(mqtt.Client, "subscribe"),
+    ):
+        await listener.start()
+
+        assert listener.is_running is True
+        assert listener._mqttc is not None
+        assert isinstance(listener._mqttc, mqtt.Client)
+        # Verify paho internal auto-reconnect is explicitly disabled
+        assert getattr(listener._mqttc, "_reconnect_on_failure", None) is False
+
+        await listener.stop()
+        assert listener.is_running is False
+
+
+@pytest.mark.asyncio
+async def test_real_paho_reason_codes_in_callbacks() -> None:
+    """Verify handling of real paho.mqtt.reasoncodes.ReasonCode objects in callbacks."""
+    import paho.mqtt.client as mqtt
+    from paho.mqtt.reasoncodes import ReasonCode
+
+    auth = QuboAuth()
+    auth._tokens = TokenPayload(access_token="test_token", user_uuid="user-123")
+    auth.get_valid_access_token = AsyncMock(return_value="test_token")  # type: ignore[method-assign]
+
+    listener = QuboMqttListener(auth, unit_uuid="unit-test")
+    mock_client = MagicMock()
+
+    # Success CONNACK ReasonCode
+    rc_success = ReasonCode(mqtt.PacketTypes.CONNACK, "Success")
+
+    def _mock_connect(*args: Any, **kwargs: Any) -> int:
+        if mock_client.on_connect:
+            mock_client.on_connect(mock_client, None, {}, rc_success)
+        return 0
+
+    mock_client.connect.side_effect = _mock_connect
+
+    with patch("paho.mqtt.client.Client", return_value=mock_client):
+        await listener.start()
+        assert listener.is_running is True
+
+        # Test real SUBACK ReasonCode Granted QoS 0
+        rc_sub_ok = ReasonCode(mqtt.PacketTypes.SUBACK, "Granted QoS 0")
+        mock_client.on_subscribe(mock_client, None, 1, [rc_sub_ok])
+        assert listener.subscribed is True
+
+        # Test real SUBACK ReasonCode Unspecified error
+        rc_sub_err = ReasonCode(mqtt.PacketTypes.SUBACK, "Unspecified error")
+        mock_client.on_subscribe(mock_client, None, 2, [rc_sub_err])
+        assert listener.subscribed is False
+
+        await listener.stop()
+
+    # Rejection ReasonCode Not authorized on start raises QuboAuthError
+    listener_fail = QuboMqttListener(auth, unit_uuid="unit-test")
+    rc_auth_fail = ReasonCode(mqtt.PacketTypes.CONNACK, "Not authorized")
+
+    def _mock_connect_fail(*args: Any, **kwargs: Any) -> int:
+        if mock_client.on_connect:
+            mock_client.on_connect(mock_client, None, {}, rc_auth_fail)
+        return 0
+
+    mock_client.connect.side_effect = _mock_connect_fail
+    with (
+        patch("paho.mqtt.client.Client", return_value=mock_client),
+        pytest.raises(QuboAuthError, match="rejected credentials"),
+    ):
+        await listener_fail.start(connect_timeout=1.0)
 
 
 @pytest.mark.asyncio

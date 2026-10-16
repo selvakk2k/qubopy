@@ -266,11 +266,22 @@ class QuboMqttListener:
         self._subscribed = False
 
         # Instantiate Paho MQTT Client (API version 2)
-        mqttc = mqtt.Client(
-            mqtt.CallbackAPIVersion.VERSION2,
-            client_id=self._client_id,
-            clean_session=True,
-        )
+        try:
+            mqttc = mqtt.Client(
+                mqtt.CallbackAPIVersion.VERSION2,
+                client_id=self._client_id,
+                clean_session=True,
+                reconnect_on_failure=False,
+            )
+        except TypeError:
+            mqttc = mqtt.Client(
+                mqtt.CallbackAPIVersion.VERSION2,
+                client_id=self._client_id,
+                clean_session=True,
+            )
+            if hasattr(mqttc, "_reconnect_on_failure"):
+                mqttc._reconnect_on_failure = False
+
         mqttc.suppress_exceptions = True
         mqttc.username_pw_set(username=user_uuid, password=token)
         mqttc.tls_set_context(ssl.create_default_context())
@@ -309,6 +320,17 @@ class QuboMqttListener:
                     else:
                         err = QuboConnectionError(f"MQTT broker rejected connection (rc={rc})")
                     self._loop.call_soon_threadsafe(self._connect_future.set_exception, err)
+                elif code in (4, 5, 134, 135):
+                    # Broker rejected credentials on reconnect (e.g. revoked/expired token)
+                    _LOGGER.error(
+                        "MQTT credentials rejected on reconnect (rc=%s). Stopping listener.",
+                        rc,
+                    )
+                    self._is_running = False
+                    if self._loop and self._loop.is_running():
+                        self._loop.call_soon_threadsafe(
+                            lambda: self._loop.create_task(self._handle_auth_failure())
+                        )
 
         def on_subscribe(
             client: Any,
@@ -326,8 +348,7 @@ class QuboMqttListener:
                 if is_failure:
                     has_failure = True
                     _LOGGER.warning("MQTT subscription refused by broker for MID %s: %s", mid, r)
-            if not has_failure:
-                self._subscribed = True
+            self._subscribed = not has_failure
 
         def on_message(client: Any, userdata: Any, msg: Any) -> None:
             self._handle_raw_message(msg.topic, msg.payload)
@@ -374,6 +395,17 @@ class QuboMqttListener:
             await self.stop()
             raise
 
+    async def _handle_auth_failure(self) -> None:
+        """Handle fatal authentication failure (expired token or rejected credentials)."""
+        await self.stop()
+        if self._on_auth_failure:
+            try:
+                res = self._on_auth_failure()
+                if asyncio.iscoroutine(res):
+                    await res
+            except Exception as cb_err:
+                _LOGGER.exception("Exception in on_auth_failure callback: %s", cb_err)
+
     def _start_reconnect_task(self) -> None:
         """Schedule background reconnection task on the event loop."""
         if (
@@ -405,14 +437,7 @@ class QuboMqttListener:
                     "automatically (%s). Interactive login required.",
                     auth_err,
                 )
-                self._is_running = False
-                if self._on_auth_failure:
-                    try:
-                        res = self._on_auth_failure()
-                        if asyncio.iscoroutine(res):
-                            await res
-                    except Exception as cb_err:
-                        _LOGGER.exception("Exception in on_auth_failure callback: %s", cb_err)
+                await self._handle_auth_failure()
                 break
             except Exception as err:
                 _LOGGER.warning("Error renewing access token for reconnect: %s", err)
@@ -439,7 +464,17 @@ class QuboMqttListener:
         self._is_running = False
         self._subscribed = False
 
-        if self._reconnect_task and not self._reconnect_task.done():
+        current_task = None
+        try:
+            current_task = asyncio.current_task()
+        except RuntimeError:
+            pass
+
+        if (
+            self._reconnect_task
+            and not self._reconnect_task.done()
+            and self._reconnect_task is not current_task
+        ):
             self._reconnect_task.cancel()
             try:
                 await self._reconnect_task
