@@ -719,29 +719,36 @@ In addition to REST-based control, the Qubo platform operates an MQTT broker for
 * **Protocol**: TLS / SSL (`ssl://`)
 * **Transport**: TCP over TLS with standard server certificate verification
 
-### 2. User & Device Authentication
+### 2. User & Device Authentication (Experimental / Unverified)
 
-The Qubo MQTT broker authenticates using persistent credentials issued by the cloud during user login:
+> [!WARNING]
+> **Client ID Collision Hazard**: MQTT brokers disconnect existing sessions when a duplicate Client ID connects. If you connect to the broker using `auth.device_id` (the identifier of your mobile phone), your mobile phone will be kicked off push notifications. Always use an independent, randomized Client ID for library or daemon sessions.
+
+The broker connection parameters and credentials below are reconstructed from app decompilation and are currently **experimental / unverified** over live wire connections:
 
 * **Username**: The account user UUID (`auth.user_uuid`).
-* **Password**: The persistent account MQTT secret returned during login (`auth.mqtt_password`).
-* **Client ID**: The registered mobile or application device identifier (`auth.device_id`).
+* **Password**: Account MQTT secret (`auth.mqtt_password`). Note: `mqttPassword` is a tentative key name identified in the app's local SQLite schema; its presence in all login API response payloads is unverified.
+* **Client ID**: A unique client string (e.g. `f"qubopy_{uuid.uuid4().hex[:8]}"`).
 
-#### Python Example: Accessing Authenticated MQTT Credentials
+#### Python Example: Inspecting MQTT Parameters
 
 ```python
 import asyncio
+import uuid
 from qubopy import QuboAuth
 
 async def main():
     auth = QuboAuth()
     await auth.login_with_email("<email>", "<password>")
 
-    print("MQTT Broker Connection Parameters:")
+    # Generate a distinct client ID to avoid disconnecting your phone app
+    client_id = f"qubopy_{uuid.uuid4().hex[:8]}"
+
+    print("MQTT Broker Connection Parameters (Experimental):")
     print("  Broker Server : ssl://mqtt.platform.quboworld.com:8883")
     print(f"  Username      : {auth.user_uuid}")
-    print(f"  Password      : {auth.mqtt_password}")
-    print(f"  Client ID     : {auth.device_id}")
+    print(f"  Password      : {auth.mqtt_password or '<None returned>'}")
+    print(f"  Client ID     : {client_id}")
 
 asyncio.run(main())
 ```

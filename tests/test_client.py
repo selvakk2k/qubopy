@@ -541,6 +541,7 @@ async def test_client_get_ooi_and_lock_events(sample_client):
         assert res_lock == [{"id": "le-1", "action": "manual_unlock"}]
         assert "/control-monitor/api/v1/sp/" in mock_req.call_args[0][1]
         assert "/device/lock-1/event" in mock_req.call_args[0][1]
+        assert mock_req.call_args[1]["params"] is None
 
     await sample_client.close()
 

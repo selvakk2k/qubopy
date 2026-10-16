@@ -175,7 +175,7 @@ class QuboCamera(QuboDevice):
         self,
         start_time: int | None = None,
         end_time: int | None = None,
-        limit: int = 50,
+        limit: int | None = None,
     ) -> list[dict[str, Any]]:
         """Fetch Object of Interest (OOI) motion and detection events from control-monitor."""
         if not self.client:

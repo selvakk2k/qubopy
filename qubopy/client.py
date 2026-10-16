@@ -383,16 +383,22 @@ class QuboClient:
         unit_uuid: str,
         start_time: int | None = None,
         end_time: int | None = None,
-        limit: int = 50,
+        limit: int | None = None,
     ) -> list[dict[str, Any]]:
-        """Fetch Object of Interest (OOI) camera detection events from control-monitor."""
+        """Fetch Object of Interest (OOI) camera detection events from control-monitor.
+
+        Note: Query parameters (start_time, end_time, limit) are optional and
+        unverified against the backend server schema.
+        """
         path = PATH_OOI_EVENTS.format(sp=self.sp_id, unit_uuid=unit_uuid)
-        params: dict[str, Any] = {"limit": limit}
-        if start_time:
+        params: dict[str, Any] = {}
+        if limit is not None:
+            params["limit"] = limit
+        if start_time is not None:
             params["startTime"] = start_time
-        if end_time:
+        if end_time is not None:
             params["endTime"] = end_time
-        resp = await self.request("GET", path, params=params)
+        resp = await self.request("GET", path, params=params or None)
         if isinstance(resp, list):
             return resp
         if isinstance(resp, dict):
@@ -404,16 +410,22 @@ class QuboClient:
         device_uuid: str,
         start_time: int | None = None,
         end_time: int | None = None,
-        limit: int = 50,
+        limit: int | None = None,
     ) -> list[dict[str, Any]]:
-        """Fetch lock operation audit events from control-monitor."""
+        """Fetch lock operation audit events from control-monitor.
+
+        Note: Query parameters (start_time, end_time, limit) are optional and
+        unverified against the backend server schema.
+        """
         path = PATH_LOCK_EVENTS.format(sp=self.sp_id, device_uuid=device_uuid)
-        params: dict[str, Any] = {"limit": limit}
-        if start_time:
+        params: dict[str, Any] = {}
+        if limit is not None:
+            params["limit"] = limit
+        if start_time is not None:
             params["startTime"] = start_time
-        if end_time:
+        if end_time is not None:
             params["endTime"] = end_time
-        resp = await self.request("GET", path, params=params)
+        resp = await self.request("GET", path, params=params or None)
         if isinstance(resp, list):
             return resp
         if isinstance(resp, dict):

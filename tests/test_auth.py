@@ -51,6 +51,33 @@ async def test_email_login_success():
 
 
 @pytest.mark.asyncio
+async def test_email_login_missing_mqtt_password():
+    """Verify login succeeds gracefully when mqttPassword is omitted in response."""
+    auth = QuboAuth()
+    response_payload = {
+        "accessToken": (
+            "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9."
+            "eyJleHAiOjIwMDAwMDAwMDAsInV1aWQiOiJ1c2VyLTk5OSJ9.sig"
+        ),
+        "refreshToken": "refresh-token-xyz",
+        "uuid": "user-999",
+    }
+
+    mock_resp = MockClientResponse(200, json.dumps(response_payload))
+    with patch("aiohttp.ClientSession.post", return_value=mock_resp):
+        tokens = await auth.login_with_email("user@example.com", "mypassword")
+
+        assert tokens.access_token == response_payload["accessToken"]
+        assert tokens.refresh_token == "refresh-token-xyz"
+        assert tokens.user_uuid == "user-999"
+        assert tokens.mqtt_password is None
+        assert auth.is_authenticated is True
+        assert auth.mqtt_password is None
+
+    await auth.close()
+
+
+@pytest.mark.asyncio
 async def test_email_login_invalid_credentials():
     """Verify that 401 error raises QuboAuthError."""
     auth = QuboAuth()

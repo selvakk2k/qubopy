@@ -678,6 +678,32 @@ async def test_lock_live_fetch_and_otp_methods(sample_client):
 
 
 @pytest.mark.asyncio
+async def test_lock_state_parsing_exact_and_unknown(sample_client):
+    """Verify is_locked handles exact states, in-transit states, and unknown values."""
+    info = DeviceModelInfo(uuid="lock-states", model="HLM01", deviceType="SmartDoorLock")
+
+    for raw_state, expected in [
+        ("locked", True),
+        ("lock", True),
+        ("LOCKED", True),
+        ("unlocked", False),
+        ("unlock", False),
+        ("UNLOCKED", False),
+        ("unlocking", None),
+        ("locking", None),
+        ("jammed", None),
+        ("unknown", None),
+        ("", None),
+    ]:
+        shadow = DeviceShadow(
+            device_uuid="lock-states",
+            reported={"lockState": raw_state},
+        )
+        lock = QuboLock(info, sample_client, shadow)
+        assert lock.is_locked is expected, f"Failed for state '{raw_state}'"
+
+
+@pytest.mark.asyncio
 async def test_device_extended_api_delegates(sample_client):
     """Verify plug, purifier, and camera delegate to client methods."""
     plug_info = DeviceModelInfo(uuid="plug-01", model="HSP01", deviceType="SmartPlug")
