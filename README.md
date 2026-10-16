@@ -409,6 +409,10 @@ python -m qubopy export-ble-keys --device-id <lock_uuid>
 
 # Cloud unlock smart lock via paired in-home gateway
 python -m qubopy unlock --device-id <lock_uuid>
+
+# Enable verbose debug logging for troubleshooting (works with any command)
+python -m qubopy --debug devices
+python -m qubopy -v login-phone --phone <phone_number>
 ```
 
 ### Session & Token Management

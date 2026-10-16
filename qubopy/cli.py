@@ -6,6 +6,7 @@ import base64
 import datetime
 import getpass
 import json
+import logging
 import os
 import sys
 import time
@@ -632,6 +633,14 @@ def main() -> None:
         prog="qubopy",
         description="Qubo Python Client Library & Local BLE Enabler CLI",
     )
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        "--debug",
+        action="store_true",
+        dest="debug",
+        help="Enable verbose debug logging to stderr",
+    )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     # login
@@ -748,6 +757,12 @@ def main() -> None:
     )
 
     args = parser.parse_args()
+
+    if getattr(args, "debug", False):
+        logging.basicConfig(
+            level=logging.DEBUG,
+            format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        )
 
     if args.command in ("tokens", "session", "dump-tokens"):
         sys.exit(_cmd_tokens(args))

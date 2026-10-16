@@ -3,6 +3,7 @@
 import argparse
 import base64
 import json
+import logging
 import time
 from unittest.mock import AsyncMock, patch
 
@@ -301,3 +302,20 @@ async def test_cmd_verify_otp_profile_index_saves_correct_email(tmp_path):
         saved = json.loads(session_file.read_text(encoding="utf-8"))
         assert saved["uuid"] == "u-1"
         assert saved["email"] == "one@test.com"
+
+
+def test_cli_debug_flag_configures_logging():
+    """Verify that passing -v/--debug configures logging.basicConfig at DEBUG level."""
+    from qubopy.cli import main
+
+    for flag in ("--debug", "-v", "--verbose"):
+        with (
+            patch("sys.argv", ["qubopy", flag, "tokens"]),
+            patch("qubopy.cli._cmd_tokens", return_value=0),
+            patch("logging.basicConfig") as mock_basic_config,
+            pytest.raises(SystemExit) as exc_info,
+        ):
+            main()
+        assert exc_info.value.code == 0
+        mock_basic_config.assert_called_once()
+        assert mock_basic_config.call_args[1]["level"] == logging.DEBUG
