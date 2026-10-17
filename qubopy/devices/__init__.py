@@ -68,7 +68,6 @@ def is_gateway_device(device_data: dict | DeviceModelInfo) -> bool:
     return bool(any(k in t_lower for k in ("doorbell", "camera", "gateway")))
 
 
-
 def create_device(
     info: DeviceModelInfo,
     client: "QuboClient",

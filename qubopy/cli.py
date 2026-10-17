@@ -55,9 +55,7 @@ def _load_session() -> dict[str, Any] | None:
         return None
 
 
-def _mask_token(
-    token: str | None, prefix_len: int = 15, suffix_len: int = 10
-) -> str | None:
+def _mask_token(token: str | None, prefix_len: int = 15, suffix_len: int = 10) -> str | None:
     """Mask sensitive token string while preserving prefix and suffix hints."""
     if not token:
         return None
@@ -119,9 +117,7 @@ def _cmd_tokens(args: argparse.Namespace) -> int:
         pass
 
     session_type = (
-        "Email (Continuous / Refreshable)"
-        if refresh_token
-        else "Phone OTP (1-hour session)"
+        "Email (Continuous / Refreshable)" if refresh_token else "Phone OTP (1-hour session)"
     )
 
     print("=== Qubo Active Session Tokens ===")
@@ -143,9 +139,8 @@ def _cmd_tokens(args: argparse.Namespace) -> int:
         masked_access = _mask_token(access_token) or access_token
         print(f"Access Token  : {masked_access}")
         if refresh_token:
-            masked_refresh = (
-                _mask_token(str(refresh_token), prefix_len=10, suffix_len=5)
-                or str(refresh_token)
+            masked_refresh = _mask_token(str(refresh_token), prefix_len=10, suffix_len=5) or str(
+                refresh_token
             )
             print(f"Refresh Token : {masked_refresh}")
         print(
@@ -196,9 +191,7 @@ async def _cmd_login(args: argparse.Namespace) -> int:
 
     print(f"Logging in with email: {args.email} ...")
     try:
-        tokens = await auth.login_with_email(
-            args.email, password, device_attribute=device_name
-        )
+        tokens = await auth.login_with_email(args.email, password, device_attribute=device_name)
         print("Login successful.")
         print(f"User UUID: {tokens.user_uuid}")
         _save_session(
@@ -227,9 +220,7 @@ async def _cmd_login_phone(args: argparse.Namespace) -> int:
     device_name = getattr(args, "device_name", DEFAULT_DEVICE_ATTRIBUTE)
     print(f"Requesting SMS OTP for phone: {clean_isd}{phone} ...")
     try:
-        resp = await auth.request_phone_otp(
-            phone, clean_isd, device_attribute=device_name
-        )
+        resp = await auth.request_phone_otp(phone, clean_isd, device_attribute=device_name)
         session_uuid = resp.get("uuid")
         if not session_uuid:
             print(f"Error: Server response missing session uuid: {resp}", file=sys.stderr)
@@ -240,13 +231,15 @@ async def _cmd_login_phone(args: argparse.Namespace) -> int:
         try:
             _secure_write_text(
                 SESSION_TEMP_FILE,
-                json.dumps({
-                    "phone": phone,
-                    "isd": clean_isd,
-                    "sessionUuid": session_uuid,
-                    "deviceId": auth.device_id,
-                    "deviceName": device_name,
-                }),
+                json.dumps(
+                    {
+                        "phone": phone,
+                        "isd": clean_isd,
+                        "sessionUuid": session_uuid,
+                        "deviceId": auth.device_id,
+                        "deviceName": device_name,
+                    }
+                ),
             )
         except Exception:
             pass
@@ -458,8 +451,7 @@ async def _cmd_list_devices(args: argparse.Namespace) -> int:
                 if isinstance(d, QuboLock):
                     type_str = "Lock (Gateway)" if d.is_gateway_accessible else "Lock (BLE Only)"
                 line = (
-                    f"{d.name:<25} {d.model:<12} {type_str:<18} {online_str:<8} "
-                    f"{d.device_id:<36}"
+                    f"{d.name:<25} {d.model:<12} {type_str:<18} {online_str:<8} {d.device_id:<36}"
                 )
                 print(line)
             print()

@@ -50,9 +50,7 @@ def _get_or_create_device_id() -> str:
             raise
         return new_id
     except Exception as err:
-        _LOGGER.debug(
-            "Could not persist or read device ID (%s); generating ephemeral UUID", err
-        )
+        _LOGGER.debug("Could not persist or read device ID (%s); generating ephemeral UUID", err)
         return str(uuid.uuid4())
 
 
@@ -159,9 +157,7 @@ class QuboAuth:
     async def _get_session(self) -> aiohttp.ClientSession:
         """Return an active aiohttp session."""
         if self._session is None or self._session.closed:
-            self._session = aiohttp.ClientSession(
-                timeout=aiohttp.ClientTimeout(total=30)
-            )
+            self._session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30))
             self._owns_session = True
         return self._session
 
@@ -328,9 +324,7 @@ class QuboAuth:
                 p_uuid = str(p.get("uuid") or p.get("userUUID") or p.get("userId") or "")
                 if p_uuid == account_uuid:
                     return idx
-            raise QuboAuthError(
-                f"Account UUID '{account_uuid}' not found among returned profiles"
-            )
+            raise QuboAuthError(f"Account UUID '{account_uuid}' not found among returned profiles")
 
         if profile_index < 0 or profile_index >= len(profiles):
             raise QuboAuthError(
@@ -450,9 +444,7 @@ class QuboAuth:
                                 f"Session refresh rejected (HTTP {response.status}): "
                                 "refresh token expired or invalid; re-login required"
                             )
-                        raise QuboAuthError(
-                            f"Session refresh failed (HTTP {response.status})"
-                        )
+                        raise QuboAuthError(f"Session refresh failed (HTTP {response.status})")
                     data = json.loads(text)
             except aiohttp.ClientError as err:
                 raise QuboConnectionError(f"Network error during token refresh: {err}") from err
@@ -465,17 +457,15 @@ class QuboAuth:
             if not new_access_token:
                 raise QuboAuthError("Refresh response missing access token")
 
-            new_refresh_token = data.get("refreshToken") or data.get("refresh_token")
-            if not new_refresh_token and self._tokens and self._tokens.refresh_token:
-                _LOGGER.debug(
-                    "Refresh response omitted a new refresh token; "
-                    "clearing refresh token to prevent reuse of spent credentials"
-                )
+            new_refresh_token = (
+                data.get("refreshToken")
+                or data.get("refresh_token")
+                or (self._tokens.refresh_token if self._tokens else None)
+            )
             expires_at = _decode_jwt_expiry(new_access_token) or (time.time() + 86400)
 
-            mqtt_password = (
-                data.get("mqttPassword")
-                or (self._tokens.mqtt_password if self._tokens else None)
+            mqtt_password = data.get("mqttPassword") or (
+                self._tokens.mqtt_password if self._tokens else None
             )
             self._tokens = TokenPayload(
                 access_token=new_access_token,

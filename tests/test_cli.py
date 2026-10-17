@@ -33,9 +33,7 @@ async def test_verify_otp_without_pending_file_no_unbound_error(tmp_path):
         patch("qubopy.cli.QuboAuth") as mock_auth_cls,
     ):
         mock_auth = mock_auth_cls.return_value
-        mock_auth.get_phone_otp_profiles = AsyncMock(
-            return_value=[{"name": "User", "uuid": "u-1"}]
-        )
+        mock_auth.get_phone_otp_profiles = AsyncMock(return_value=[{"name": "User", "uuid": "u-1"}])
         mock_auth.find_profile_index = QuboAuth.find_profile_index
         mock_auth.select_profile.return_value = TokenPayload(
             accessToken="tok",
@@ -86,12 +84,14 @@ async def test_cmd_login_phone_single_verify_call(monkeypatch):
             mock_auth.get_phone_otp_profiles.assert_awaited_once()
             mock_auth.select_profile.assert_called_once()
             assert mock_auth.select_profile.call_args[1]["profile_index"] == 1
-            mock_save.assert_called_once_with({
-                "accessToken": "tok-1",
-                "refreshToken": None,
-                "uuid": "u-1",
-                "email": "p1@test.com",
-            })
+            mock_save.assert_called_once_with(
+                {
+                    "accessToken": "tok-1",
+                    "refreshToken": None,
+                    "uuid": "u-1",
+                    "email": "p1@test.com",
+                }
+            )
 
 
 def test_models_repr_conceals_secrets():

@@ -253,3 +253,14 @@ class QuboCamera(QuboDevice):
             mobile_uuid=mobile_uuid,
             src_device_id=src_device_id,
         )
+
+    async def get_vms_doorbell_events(self) -> list[dict[str, Any]]:
+        """Fetch doorbell ring activity from the cloud video service (VMS)."""
+        if not self.client:
+            raise QuboCommandError("Device client not initialized")
+        if not self.unit_id:
+            raise QuboCommandError(f"{self.name} has no unit_id binding")
+        return await self.client.get_vms_doorbell_events(
+            unit_uuid=self.unit_id,
+            device_uuid=self.device_id,
+        )

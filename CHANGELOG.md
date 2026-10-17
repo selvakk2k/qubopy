@@ -9,11 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **Device Attribute Reads (v2)**: Added `QuboDevice.read_attribute_v2(service, attribute)` for direct access to timestamped shadow readings without formatting raw client calls.
-- **P2P Identifier Overrides**: Added `mobile_uuid` and `src_device_id` parameters to `QuboClient.initiate_p2p_call` and `QuboCamera.initiate_p2p_call`.
+- **Device Attribute Writes & Commands**: Added `QuboDevice.write_attribute(service, attribute, value)` to format `{instanceId, serviceName, attributeName, attributeValue}` and `QuboDevice.send_service_command(service, command, parameters)` to build nested control envelopes, plus `QuboDevice.reboot()` convenience helper.
+- **Doorbell Video Events (VMS)**: Added `PATH_VMS_DEVICE_EVENTS` route and `get_vms_doorbell_events` helper on `QuboClient` and `QuboCamera` for doorbell ring events from cloud video service.
+- **P2P Identifier Overrides**: Added `mobile_uuid` and `src_device_id` parameters to `QuboClient.initiate_p2p_call` and `QuboCamera.initiate_p2p_call` with documentation on retrieving the paired phone's registered UUID.
 
 ### Changed
-- **Strict Scope Validation**: Required `entity_uuid` in `QuboClient.send_command`, `update_shadow_attribute`, and `unlock_lock_via_gateway` (raising `ValueError` if missing), eliminating silent fallback to `device_uuid`. `QuboDevice.send_command` and `update_attribute` now raise `QuboCommandError` if either `unit_id` or `entity_id` is unbound.
-- **Spent Refresh Token Handling**: `QuboAuth.refresh_session` clears `refresh_token` to `None` when the cloud refresh response omits a new refresh token, preventing silent reuse of spent credentials.
+- **Strict Scope Validation**: Required `entity_uuid` in `QuboClient.send_command`, `update_shadow_attribute`, and `unlock_lock_via_gateway` (raising `ValueError` if missing), eliminating silent fallback to `device_uuid`. `QuboDevice.send_command`, `update_attribute`, and `QuboLock.unlock` now raise `QuboCommandError` if either `unit_id` or `entity_id` is unbound.
+- **Static Refresh Token Preservation**: Preserved 180-day refresh token in `QuboAuth.refresh_session` when the cloud response omits `refreshToken` (verified against live Qubo cloud hardware API, ensuring continuous multi-month operation).
 
 ## [0.1.6] - 2026-10-17
 

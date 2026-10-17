@@ -150,9 +150,7 @@ class QuboDevice:
             attributes=attributes,
         )
 
-    async def read_attribute_v2(
-        self, service: str, attribute: str
-    ) -> dict[str, Any]:
+    async def read_attribute_v2(self, service: str, attribute: str) -> dict[str, Any]:
         """Read one attribute with its device-reported timestamp via the v2 shadow."""
         if not self.client:
             raise QuboCommandError("Device client not initialized")
@@ -162,18 +160,59 @@ class QuboDevice:
             attribute_name=attribute,
         )
 
-    async def set_service_attribute(
-        self, service: str, attribute: str, value: Any
+    async def write_attribute(
+        self, service: str, attribute: str, value: Any, instance_id: int = 0
     ) -> dict[str, Any]:
-        """Update a specific service attribute in the device shadow."""
+        """Write one shadow attribute directly using the official cloud envelope."""
+        val_str = str(value).lower() if isinstance(value, bool) else str(value)
         payload = {
-            service: {
-                "attributes": {
-                    attribute: str(value),
-                }
-            }
+            "instanceId": instance_id,
+            "serviceName": service,
+            "attributeName": attribute,
+            "attributeValue": val_str,
         }
         return await self.update_attribute(payload)
+
+    async def set_service_attribute(
+        self, service: str, attribute: str, value: Any, instance_id: int = 0
+    ) -> dict[str, Any]:
+        """Update a specific service attribute in the device shadow."""
+        return await self.write_attribute(
+            service=service,
+            attribute=attribute,
+            value=value,
+            instance_id=instance_id,
+        )
+
+    async def send_service_command(
+        self,
+        service: str,
+        command: str,
+        parameters: dict[str, Any] | None = None,
+        instance_id: int = 0,
+    ) -> dict[str, Any]:
+        """Dispatch a control command using the official cloud envelope."""
+        payload = {
+            "devices": {
+                "handleName": self.name,
+                "deviceUUID": self.device_id,
+                "services": {
+                    service: {
+                        "commands": {
+                            command: {
+                                "parameters": parameters or {},
+                                "instanceId": instance_id,
+                            }
+                        }
+                    }
+                },
+            }
+        }
+        return await self.send_command(payload)
+
+    async def reboot(self) -> dict[str, Any]:
+        """Send a restart command to the device."""
+        return await self.send_service_command("deviceReboot", "reboot")
 
     def __repr__(self) -> str:
         cls_name = self.__class__.__name__

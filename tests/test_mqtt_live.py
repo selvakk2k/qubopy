@@ -238,4 +238,3 @@ async def test_wait_subscribed_timing(broker: Broker) -> None:
         assert elapsed < 1.0, f"wait_subscribed took {elapsed:.2f}s, expected < 1.0s"
     finally:
         await listener.stop()
-

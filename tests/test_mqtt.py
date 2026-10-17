@@ -870,4 +870,3 @@ async def test_mqtt_wait_subscribed_timeout() -> None:
         assert listener.subscribed is False
 
         await listener.stop()
-

@@ -36,6 +36,7 @@ from qubopy.const import (
     PATH_UNIT_DEVICES,
     PATH_UNITS,
     PATH_UPDATE_SHADOW_ATTRIBUTE,
+    PATH_VMS_DEVICE_EVENTS,
 )
 from qubopy.devices import QuboDevice, create_device, is_gateway_device
 from qubopy.exceptions import (
@@ -71,9 +72,7 @@ class QuboClient:
     async def _get_session(self) -> aiohttp.ClientSession:
         """Return active aiohttp session."""
         if self._session is None or self._session.closed:
-            self._session = aiohttp.ClientSession(
-                timeout=aiohttp.ClientTimeout(total=30)
-            )
+            self._session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30))
             self._owns_session = True
         return self._session
 
@@ -134,9 +133,7 @@ class QuboClient:
                         f"Authentication rejected by Qubo API (HTTP {response.status})"
                     )
                 elif response.status not in (200, 201, 204):
-                    _LOGGER.debug(
-                        "API error response (HTTP %s): %s", response.status, text[:200]
-                    )
+                    _LOGGER.debug("API error response (HTTP %s): %s", response.status, text[:200])
                     raise QuboCommandError(
                         f"Qubo API error (HTTP {response.status}) on {method} {url}"
                     )
@@ -451,6 +448,32 @@ class QuboClient:
             return resp.get("events") or resp.get("data") or [resp]
         return []
 
+    async def get_vms_doorbell_events(
+        self,
+        unit_uuid: str,
+        device_uuid: str,
+    ) -> list[dict[str, Any]]:
+        """Fetch doorbell ring activity from the cloud video service (VMS).
+
+        Returns a list of raw event dicts containing transactionUUID,
+        createdTimestamp, closedTimestamp, callStatus, isRecorded, and snapshot.
+        """
+        if not unit_uuid:
+            raise ValueError("unit_uuid must be provided to fetch VMS doorbell events")
+        if not device_uuid:
+            raise ValueError("device_uuid must be provided to fetch VMS doorbell events")
+        path = PATH_VMS_DEVICE_EVENTS.format(
+            sp=self.sp_id,
+            unit_uuid=unit_uuid,
+            device_uuid=device_uuid,
+        )
+        resp = await self.request("GET", path)
+        if isinstance(resp, list):
+            return resp
+        if isinstance(resp, dict):
+            return resp.get("events") or resp.get("data") or [resp]
+        return []
+
     async def generate_lock_otp(
         self,
         device_uuid: str,
@@ -518,9 +541,7 @@ class QuboClient:
         path = mapping[period_clean].format(sp=self.sp_id, device_uuid=device_uuid)
         return await self.request("GET", path)
 
-    async def get_device_storage(
-        self, unit_uuid: str, device_uuid: str
-    ) -> dict[str, Any]:
+    async def get_device_storage(self, unit_uuid: str, device_uuid: str) -> dict[str, Any]:
         """Fetch SD card capacity, status, and partition diagnostics."""
         path = PATH_DEVICE_STORAGE.format(
             sp=self.sp_id,
@@ -588,9 +609,7 @@ class QuboClient:
         self, unit_uuid: str, entity_uuid: str
     ) -> list[DeviceModelInfo]:
         """Fetch device descriptors for a specific unit and entity."""
-        path = PATH_GET_DEVICES.format(
-            sp=self.sp_id, unit_uuid=unit_uuid, entity_uuid=entity_uuid
-        )
+        path = PATH_GET_DEVICES.format(sp=self.sp_id, unit_uuid=unit_uuid, entity_uuid=entity_uuid)
         resp = await self.request("GET", path)
         devices: list[DeviceModelInfo] = []
         items = resp if isinstance(resp, list) else resp.get("data", resp.get("devices", []))
@@ -603,9 +622,7 @@ class QuboClient:
                     devices.append(DeviceModelInfo.model_validate(d))
         return devices
 
-    async def get_camera_rtsp_support(
-        self, unit_uuid: str, device_uuid: str
-    ) -> RtspStreamInfo:
+    async def get_camera_rtsp_support(self, unit_uuid: str, device_uuid: str) -> RtspStreamInfo:
         """Query RTSP stream capability and URL for a security camera."""
         path = PATH_RTSP_SUPPORT.format(sp=self.sp_id, unit_uuid=unit_uuid)
         try:
@@ -637,18 +654,14 @@ class QuboClient:
         Returns a LiveStreamUrl (str subclass) carrying app_session_id and instance_id.
         """
         app_id = user_app_id or self.auth.device_id
-        path = PATH_START_STREAM.format(
-            sp=self.sp_id, unit_uuid=unit_uuid, device_uuid=device_uuid
-        )
+        path = PATH_START_STREAM.format(sp=self.sp_id, unit_uuid=unit_uuid, device_uuid=device_uuid)
         params = {
             "timestamp": "NOW",
             "type": quality,
             "streamSourceCamera": "primary",
             "deviceType": device_type or "ptzeCamera",
         }
-        resp = await self.request(
-            "POST", path, json_data={"userAppID": app_id}, params=params
-        )
+        resp = await self.request("POST", path, json_data={"userAppID": app_id}, params=params)
         stream_url = resp.get("streamURL") or ""
         return LiveStreamUrl(
             str(stream_url),
@@ -671,9 +684,7 @@ class QuboClient:
         when the RTSP client socket closes.
         """
         app_id = user_app_id or self.auth.device_id
-        path = PATH_STOP_STREAM.format(
-            sp=self.sp_id, unit_uuid=unit_uuid, device_uuid=device_uuid
-        )
+        path = PATH_STOP_STREAM.format(sp=self.sp_id, unit_uuid=unit_uuid, device_uuid=device_uuid)
         params = {
             "appSessionId": app_session_id,
             "type": quality,
@@ -701,25 +712,31 @@ class QuboClient:
         """Initiate a direct local P2P streaming session with a camera or doorbell (Experimental).
 
         Dispatches signaling offer with session keys and candidate IP:port.
-        Note: Exact inbound packet payload framing and encryption format are unverified
-        on physical hardware.
+        For paired hardware P2P sessions, pass the phone's device UUID in `mobile_uuid`
+        (e.g. from the account's registered mobile device name `MobileApp_<UUID>` or
+        the decoded JWT `mob` claim). When omitted, falls back to `auth.tokens.user_uuid`.
         """
         key = aes_key or os.urandom(16)
         iv = aes_iv or os.urandom(16)
         session_id = str(uuid.uuid4())
         quality_val = quality if quality in ("high", "low", "medium", "auto") else "high"
-        actual_mobile_uuid = mobile_uuid or (
-            self.auth.tokens.user_uuid if self.auth.tokens else ""
-        )
+        if not mobile_uuid:
+            _LOGGER.debug(
+                "initiate_p2p_call: mobile_uuid omitted; falling back to account user_uuid. "
+                "For paired hardware P2P sessions, pass the phone's device UUID."
+            )
+        actual_mobile_uuid = mobile_uuid or (self.auth.tokens.user_uuid if self.auth.tokens else "")
         actual_src_device_id = src_device_id or self.auth.device_id
 
-        offer = json.dumps([
-            {
-                "host": f"{local_ip}:{local_port}",
-                "protocol": "UDP",
-                "srflx_0": f"{local_ip}:{local_port}",
-            }
-        ])
+        offer = json.dumps(
+            [
+                {
+                    "host": f"{local_ip}:{local_port}",
+                    "protocol": "UDP",
+                    "srflx_0": f"{local_ip}:{local_port}",
+                }
+            ]
+        )
 
         payload = {
             "aesIV": iv.hex().upper(),

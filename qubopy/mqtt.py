@@ -260,9 +260,7 @@ class QuboMqttListener:
                 for u in units:
                     uid = extract_unit_uuid(u)
                     name = (
-                        u.get("name", "Home")
-                        if isinstance(u, dict)
-                        else getattr(u, "name", "Home")
+                        u.get("name", "Home") if isinstance(u, dict) else getattr(u, "name", "Home")
                     )
                     if uid:
                         discovered.append((uid, str(name)))

@@ -110,8 +110,8 @@ python -m qubopy --help
 `qubopy` supports two distinct authentication pathways provided by Qubo cloud services:
 
 ### 1. Email and Password (Continuous Session with Refresh Tokens)
-* **Session Lifecycle**: Continuous. Qubo returns an `accessToken` along with a valid server-issued `refreshToken`.
-* **Automatic Renewal**: `qubopy` proactively refreshes the access token before expiration using `POST /auth/refresh`.
+* **Session Lifecycle**: Continuous. Qubo returns an `accessToken` (1 hour validity) along with a valid server-issued `refreshToken` (180 days / 6 months validity).
+* **Automatic Renewal**: `qubopy` proactively refreshes the access token before expiration using `POST /auth/refresh`, preserving the static 180-day refresh token across renews.
 * **Target Use Case**: Recommended for permanent Home Assistant integrations and continuous 24/7 cloud polling.
 
 ### 2. Phone Number and SMS OTP (1-Hour Session / Provisioning Extractor)
@@ -153,6 +153,7 @@ Authenticate using either your email and password or phone SMS OTP. Developers c
 import asyncio
 from qubopy import QuboAuth, QuboClient
 
+
 async def main():
     auth = QuboAuth()
     await auth.login_with_email(
@@ -166,6 +167,7 @@ async def main():
         for dev in devices:
             print(f"- {dev.name} ({dev.model}) [{dev.device_id}]")
 
+
 asyncio.run(main())
 ```
 
@@ -174,6 +176,7 @@ asyncio.run(main())
 ```python
 import asyncio
 from qubopy import QuboAuth, QuboClient
+
 
 async def main():
     auth = QuboAuth()
@@ -193,6 +196,7 @@ async def main():
         for dev in devices:
             print(f"- {dev.name} ({dev.model}) [{dev.device_id}]")
 
+
 asyncio.run(main())
 ```
 
@@ -204,6 +208,7 @@ asyncio.run(main())
 
 ```python
 from qubopy.devices import QuboPlug
+
 
 # Assuming 'plug' is an instance of QuboPlug from get_all_devices()
 async def operate_plug(plug: QuboPlug):
@@ -232,6 +237,7 @@ async def operate_plug(plug: QuboPlug):
 
 ```python
 from qubopy.devices import QuboAirPurifier
+
 
 async def operate_purifier(purifier: QuboAirPurifier):
     # Power controls
@@ -268,6 +274,7 @@ async def operate_purifier(purifier: QuboAirPurifier):
 ```python
 from qubopy.devices import QuboLight
 
+
 async def operate_light(light: QuboLight):
     # Turn on with custom brightness (0-100) and RGB color tuple
     await light.turn_on(brightness=80, rgb=(255, 140, 0))
@@ -301,6 +308,7 @@ Qubo security cameras (`HCP` / `HCO` series) and video doorbells (`HCD` series) 
 
 ```python
 from qubopy.devices import QuboCamera
+
 
 async def operate_camera(camera: QuboCamera):
     # Privacy shutter and deterrent siren controls
@@ -390,8 +398,8 @@ Qubo cameras do not expose an unauthenticated LAN RTSP port. Instead, the camera
 # Negotiate local P2P session directly to your media receiver (e.g. Home Assistant or go2rtc server)
 session = await camera.initiate_p2p_call(
     local_ip="192.168.1.50",  # IP address of receiver
-    local_port=49700,         # Listening UDP port on receiver
-    quality="high",           # "high" (1080p/2K) or "low" (360p)
+    local_port=49700,  # Listening UDP port on receiver
+    quality="high",  # "high" (1080p/2K) or "low" (360p)
 )
 
 print("P2P Session Initiated:")
@@ -438,6 +446,7 @@ Query in-car Wi-Fi AP credentials, parking monitoring status, and overspeed aler
 ```python
 from qubopy.devices import QuboDashcam
 
+
 # Assuming 'dashcam' is an instance of QuboDashcam from get_all_devices()
 async def inspect_dashcam(dashcam: QuboDashcam):
     # Configure dashcam settings remotely via cloud shadow
@@ -469,6 +478,7 @@ Actuates the lock via an in-home Qubo gateway bridge (such as a Video Doorbell P
 
 ```python
 from qubopy.devices import QuboLock
+
 
 async def unlock_door(lock: QuboLock):
     # Check if an in-home RF/BLE gateway bridge is active
@@ -505,6 +515,7 @@ Extract offline cryptographic parameters from the account shadow using Python or
 
 ```python
 from qubopy.devices import QuboLock
+
 
 async def export_lock_ble(lock: QuboLock):
     keys = await lock.get_ble_lock_keys()
@@ -594,6 +605,7 @@ async def manage_lock_otp(lock: QuboLock):
 
 ```python
 from qubopy.devices import QuboSensor
+
 
 async def inspect_sensor(sensor: QuboSensor):
     await sensor.refresh()
@@ -725,6 +737,7 @@ import json
 from pathlib import Path
 from qubopy import QuboAuth, QuboClient
 
+
 async def main() -> None:
     # Read saved credentials
     session_path = Path.home() / ".qubopy_session.json"
@@ -742,6 +755,7 @@ async def main() -> None:
     async with QuboClient(auth) as client:
         devices = await client.get_all_devices()
         print(f"Discovered {len(devices)} device(s)")
+
 
 if __name__ == "__main__":
     asyncio.run(main())
@@ -787,6 +801,7 @@ pip install "qubopy[mqtt]"
 import asyncio
 from qubopy import QuboAuth, QuboClient, QuboMqttEvent, QuboMqttListener
 
+
 async def main():
     auth = QuboAuth()
     await auth.login_with_email("<email>", "<password>")
@@ -802,7 +817,9 @@ async def main():
 
         # Register callback for real-time telemetry events
         def handle_event(event: QuboMqttEvent):
-            print(f"[{event.service}] {event.device_uuid} -> {event.event_name}: {event.parameters}")
+            print(
+                f"[{event.service}] {event.device_uuid} -> {event.event_name}: {event.parameters}"
+            )
 
         # Optional service and device filtering
         listener.add_event_listener(handle_event, service="panTiltControl")
@@ -815,6 +832,7 @@ async def main():
             print("Listening for real-time Qubo events... Press Ctrl+C to stop.")
             while True:
                 await asyncio.sleep(1)
+
 
 asyncio.run(main())
 ```

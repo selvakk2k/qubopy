@@ -58,6 +58,13 @@ ROUTE_SPECS = [
         lambda c: c.stop_live_stream("u1", "d1", "sess-1"),
         "STREAM_URL",
     ),
+    (
+        "vms doorbell events",
+        "GET",
+        "/vms/api/v1/sp/9999/units/u1/devices/d1",
+        lambda c: c.get_vms_doorbell_events("u1", "d1"),
+        "(VMS cloud video service doorbell ring events)",
+    ),
     # UNVERIFIED routes (retained and pinned against current library behavior)
     (
         "update shadow attribute",

@@ -263,10 +263,12 @@ async def test_client_401_real_refresh_retry():
             refresh_called = True
             return MockClientResponse(
                 200,
-                json.dumps({
-                    "accessToken": "newly-refreshed-jwt-token",
-                    "refreshToken": "new-refresh-token",
-                }),
+                json.dumps(
+                    {
+                        "accessToken": "newly-refreshed-jwt-token",
+                        "refreshToken": "new-refresh-token",
+                    }
+                ),
             )
         return MockClientResponse(404, "Not Found")
 
@@ -280,8 +282,10 @@ async def test_client_401_real_refresh_retry():
         # Retry call succeeds
         return MockClientResponse(200, json.dumps({"success": True}))
 
-    with patch("aiohttp.ClientSession.post", side_effect=mock_post), \
-         patch("aiohttp.ClientSession.request", side_effect=mock_request):
+    with (
+        patch("aiohttp.ClientSession.post", side_effect=mock_post),
+        patch("aiohttp.ClientSession.request", side_effect=mock_request),
+    ):
         res = await client.request("GET", "/test/data")
         assert res == {"success": True}
         assert refresh_called is True
@@ -312,10 +316,12 @@ async def test_client_concurrent_401_single_refresh():
             refresh_count += 1
             return MockClientResponse(
                 200,
-                json.dumps({
-                    "accessToken": "newly-refreshed-jwt-token",
-                    "refreshToken": "new-refresh-token",
-                }),
+                json.dumps(
+                    {
+                        "accessToken": "newly-refreshed-jwt-token",
+                        "refreshToken": "new-refresh-token",
+                    }
+                ),
                 delay=0.01,
             )
         return MockClientResponse(404, "Not Found")
@@ -327,8 +333,10 @@ async def test_client_concurrent_401_single_refresh():
             return MockClientResponse(401, json.dumps({"error": "Revoked"}))
         return MockClientResponse(200, json.dumps({"status": "OK"}))
 
-    with patch("aiohttp.ClientSession.post", side_effect=mock_post), \
-         patch("aiohttp.ClientSession.request", side_effect=mock_request):
+    with (
+        patch("aiohttp.ClientSession.post", side_effect=mock_post),
+        patch("aiohttp.ClientSession.request", side_effect=mock_request),
+    ):
         results = await asyncio.gather(
             client.request("GET", "/test/res1"),
             client.request("GET", "/test/res2"),
@@ -358,9 +366,7 @@ async def test_client_retry_propagates_500_error(sample_client):
         return MockClientResponse(500, "Internal Server Error")
 
     with (
-        patch.object(
-            sample_client.auth, "refresh_session", new_callable=AsyncMock
-        ) as mock_refresh,
+        patch.object(sample_client.auth, "refresh_session", new_callable=AsyncMock) as mock_refresh,
         patch("aiohttp.ClientSession.request", side_effect=mock_handler),
     ):
         mock_refresh.return_value = sample_client.auth.set_tokens(
@@ -380,11 +386,15 @@ async def test_client_url_validation_rejections(sample_client):
     """Bug 3: Reject lookalike hosts, userinfo forms, and allow valid paths."""
     # Lookalike suffix
     with pytest.raises(ValueError, match="Invalid request URL"):
-        await sample_client.request("GET", "https://srvcapp.platform.quboworld.com:443.evil.com/api")
+        await sample_client.request(
+            "GET", "https://srvcapp.platform.quboworld.com:443.evil.com/api"
+        )
 
     # Userinfo form
     with pytest.raises(ValueError, match="Invalid request URL"):
-        await sample_client.request("GET", "https://srvcapp.platform.quboworld.com:443@evil.com/api")
+        await sample_client.request(
+            "GET", "https://srvcapp.platform.quboworld.com:443@evil.com/api"
+        )
 
     # Relative path works normally
     mock_resp = MockClientResponse(200, json.dumps({"ok": True}))
@@ -462,9 +472,7 @@ async def test_client_get_device_events(sample_client):
     """Verify get_device_events calls control-monitor event route."""
     mock_resp = MockClientResponse(200, json.dumps({"events": [{"id": "ev1"}]}))
     with patch("aiohttp.ClientSession.request", return_value=mock_resp) as mock_req:
-        evs = await sample_client.get_device_events(
-            "unit-1", "cam-1", version="v1", limit=20
-        )
+        evs = await sample_client.get_device_events("unit-1", "cam-1", version="v1", limit=20)
         assert evs == [{"id": "ev1"}]
         assert "/control-monitor/api/v1/" in mock_req.call_args[0][1]
         assert "/device/cam-1/event" in mock_req.call_args[0][1]
@@ -475,8 +483,7 @@ async def test_client_get_device_events(sample_client):
 
 @pytest.mark.asyncio
 async def test_client_generate_lock_otp(sample_client):
-    """Verify generate_lock_otp sends empty array by default and handles responses.
-    """
+    """Verify generate_lock_otp sends empty array by default and handles responses."""
     # 1. Default payload without validity_minutes sends [] matching Android app
     mock_array_resp = MockClientResponse(200, json.dumps([{"otp": "123456", "validTill": 1728000}]))
     with patch("aiohttp.ClientSession.request", return_value=mock_array_resp) as mock_req:
@@ -642,11 +649,13 @@ async def test_client_live_stream_start_and_stop(sample_client):
     """Verify get_live_stream_url mints LiveStreamUrl and stop_live_stream sends DELETE."""
     mock_start_resp = MockClientResponse(
         200,
-        json.dumps({
-            "streamURL": "rtsps://wowza.quboworld.com:443/live/cam-1",
-            "appSessionId": "sess-live-987",
-            "instanceId": "inst-555",
-        }),
+        json.dumps(
+            {
+                "streamURL": "rtsps://wowza.quboworld.com:443/live/cam-1",
+                "appSessionId": "sess-live-987",
+                "instanceId": "inst-555",
+            }
+        ),
     )
     with patch("aiohttp.ClientSession.request", return_value=mock_start_resp) as mock_req:
         url = await sample_client.get_live_stream_url(
@@ -701,7 +710,3 @@ async def test_client_live_stream_start_and_stop(sample_client):
         assert res_fail is False
 
     await sample_client.close()
-
-
-
-

@@ -143,3 +143,19 @@ async def test_unlock_missing_gateway_raises_error(sample_client):
     with pytest.raises(QuboCommandError, match="no in-home gateway"):
         await lock.unlock()
 
+
+@pytest.mark.asyncio
+async def test_unlock_missing_unit_or_entity_raises_command_error(sample_client):
+    """Verify QuboCommandError is raised when lock has missing unit or entity binding."""
+    info = DeviceModelInfo(
+        uuid="lock-uuid-7",
+        deviceId="lock-uuid-7",
+        name="Unbound Lock",
+        model="HLM01",
+        type="SmartLock",
+        extraData={"gatewayUUID": "gateway-doorbell-789"},
+    )
+    lock = QuboLock(info, sample_client)
+
+    with pytest.raises(QuboCommandError, match="has no unit/entity binding"):
+        await lock.unlock()

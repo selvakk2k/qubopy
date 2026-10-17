@@ -25,9 +25,9 @@ class QuboLock(QuboDevice):
     @property
     def gateway_id(self) -> str | None:
         """Return paired in-home gateway device UUID if present in metadata."""
-        return _first_not_none(
-            self.info.extra_data, "gatewayUUID", "gatewayId"
-        ) or _first_not_none(self.shadow.reported, "gatewayUUID", "gatewayId")
+        return _first_not_none(self.info.extra_data, "gatewayUUID", "gatewayId") or _first_not_none(
+            self.shadow.reported, "gatewayUUID", "gatewayId"
+        )
 
     @property
     def is_gateway_accessible(self) -> bool:
@@ -172,6 +172,10 @@ class QuboLock(QuboDevice):
                 "This lock is operating in standalone Bluetooth mode; use local BLE key export "
                 "(get_ble_lock_keys()) or provide an explicit gateway_uuid."
             )
+        if not self.unit_id or not self.entity_id:
+            raise QuboCommandError(
+                f"{self.name} has no unit/entity binding and cannot be commanded"
+            )
         return await self.client.unlock_lock_via_gateway(
             unit_uuid=self.unit_id,
             entity_uuid=self.entity_id,
@@ -227,9 +231,7 @@ class QuboLock(QuboDevice):
             return pct
         return None
 
-    async def generate_guest_otp(
-        self, validity_minutes: int | None = None
-    ) -> dict[str, Any]:
+    async def generate_guest_otp(self, validity_minutes: int | None = None) -> dict[str, Any]:
         """Generate a temporary one-time keypad PIN code for guest access.
 
         Note:

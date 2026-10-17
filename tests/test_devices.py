@@ -154,6 +154,7 @@ async def test_lock_gateway_accessibility_and_unlock(sample_client):
         model="HLM01",
         type="SmartDoorLock",
         unitUUID="unit-gw-01",
+        entityUUID="entity-gw-01",
         extraData={"gatewayUUID": "cam-gw-01"},
     )
     lock_gw = QuboLock(info_gw, sample_client)
@@ -184,13 +185,15 @@ async def test_lock_gateway_accessibility_and_unlock(sample_client):
 
 def test_dashcam_device(sample_client):
     """Test QuboDashcam instantiation, properties, and telemetry."""
-    info = DeviceModelInfo.model_validate({
-        "deviceUUID": "dash-01",
-        "deviceName": "XUV 300 Dashcam",
-        "aModelNo": "HCA08B",
-        "deviceType": "2kDashCam",
-        "extraData": {"serialNumber": "IN2507JJIM09358"},
-    })
+    info = DeviceModelInfo.model_validate(
+        {
+            "deviceUUID": "dash-01",
+            "deviceName": "XUV 300 Dashcam",
+            "aModelNo": "HCA08B",
+            "deviceType": "2kDashCam",
+            "extraData": {"serialNumber": "IN2507JJIM09358"},
+        }
+    )
     assert info.model == "HCA08B"
     assert info.uuid == "dash-01"
     assert info.name == "XUV 300 Dashcam"
@@ -273,7 +276,12 @@ async def test_camera_controls_and_streaming(sample_client):
         unit_uuid="u-01",
         entity_uuid="e-01",
         device_uuid="cam-01",
-        attributes={"cameraFunction": {"attributes": {"state": "disable"}}},
+        attributes={
+            "instanceId": 0,
+            "serviceName": "cameraFunction",
+            "attributeName": "state",
+            "attributeValue": "disable",
+        },
     )
 
     await cam.set_night_mode("true")
@@ -281,7 +289,12 @@ async def test_camera_controls_and_streaming(sample_client):
         unit_uuid="u-01",
         entity_uuid="e-01",
         device_uuid="cam-01",
-        attributes={"nightModeControl": {"attributes": {"nightMode": "true"}}},
+        attributes={
+            "instanceId": 0,
+            "serviceName": "nightModeControl",
+            "attributeName": "nightMode",
+            "attributeValue": "true",
+        },
     )
 
     await cam.set_motion_tracking(False)
@@ -289,7 +302,12 @@ async def test_camera_controls_and_streaming(sample_client):
         unit_uuid="u-01",
         entity_uuid="e-01",
         device_uuid="cam-01",
-        attributes={"motionTracking": {"attributes": {"enabled": "false"}}},
+        attributes={
+            "instanceId": 0,
+            "serviceName": "motionTracking",
+            "attributeName": "enabled",
+            "attributeValue": "false",
+        },
     )
 
     await cam.pan_tilt(10, -50)
@@ -297,7 +315,12 @@ async def test_camera_controls_and_streaming(sample_client):
         unit_uuid="u-01",
         entity_uuid="e-01",
         device_uuid="cam-01",
-        attributes={"panTiltControl": {"attributes": {"horizontalVerticalPostion": "10,-50"}}},
+        attributes={
+            "instanceId": 0,
+            "serviceName": "panTiltControl",
+            "attributeName": "horizontalVerticalPostion",
+            "attributeValue": "10,-50",
+        },
     )
 
     # Test P2P video call negotiation
@@ -362,7 +385,12 @@ async def test_dashcam_controls(sample_client):
         unit_uuid="u-dash",
         entity_uuid="e-dash",
         device_uuid="dash-01",
-        attributes={"parkingConfig": {"attributes": {"state": "enable"}}},
+        attributes={
+            "instanceId": 0,
+            "serviceName": "parkingConfig",
+            "attributeName": "state",
+            "attributeValue": "enable",
+        },
     )
 
     await dash.set_overspeed_limit(100)
@@ -370,7 +398,12 @@ async def test_dashcam_controls(sample_client):
         unit_uuid="u-dash",
         entity_uuid="e-dash",
         device_uuid="dash-01",
-        attributes={"dashcamGpsConfig": {"attributes": {"overSpeedLimits": "100"}}},
+        attributes={
+            "instanceId": 0,
+            "serviceName": "dashcamGpsConfig",
+            "attributeName": "overSpeedLimits",
+            "attributeValue": "100",
+        },
     )
 
     await dash.set_audio_recording(False)
@@ -378,7 +411,12 @@ async def test_dashcam_controls(sample_client):
         unit_uuid="u-dash",
         entity_uuid="e-dash",
         device_uuid="dash-01",
-        attributes={"dashcamRecordingConfig": {"attributes": {"audioTrack": "disable"}}},
+        attributes={
+            "instanceId": 0,
+            "serviceName": "dashcamRecordingConfig",
+            "attributeName": "audioTrack",
+            "attributeValue": "disable",
+        },
     )
 
 
@@ -557,6 +595,7 @@ def test_as_bool_coercion(caplog):
 
     # Strings "open" and "close" removed from general _as_bool (handled by locks)
     import logging
+
     with caplog.at_level(logging.DEBUG):
         assert _as_bool("open") is None
         assert _as_bool("close") is None
@@ -858,7 +897,9 @@ def test_rtsp_stream_info_alias():
     assert info1.stream_url == "rtsps://host/live"
     assert info1.rtsp_url == "rtsps://host/live"
 
-    info2 = RtspStreamInfo.model_validate({"device_uuid": "cam-2", "rtsp_url": "rtsps://host/live2"})
+    info2 = RtspStreamInfo.model_validate(
+        {"device_uuid": "cam-2", "rtsp_url": "rtsps://host/live2"}
+    )
     assert info2.stream_url == "rtsps://host/live2"
     assert info2.rtsp_url == "rtsps://host/live2"
 
@@ -1013,16 +1054,82 @@ async def test_device_read_attribute_v2(sample_client):
     )
 
 
+@pytest.mark.asyncio
+async def test_device_write_attribute_and_service_command(sample_client):
+    """Verify write_attribute and send_service_command format the app envelopes."""
+    info = DeviceModelInfo(uuid="d1", deviceId="d1", name="Dev 1", unitUUID="u1", entityUUID="e1")
+    dev = QuboDevice(info, sample_client)
+    sample_client.update_shadow_attribute = AsyncMock(return_value={"status": "SUCCESS"})
+    sample_client.send_command = AsyncMock(return_value={"status": "SUCCESS"})
+
+    res = await dev.write_attribute("doorbell", "dndEnabled", True)
+    assert res == {"status": "SUCCESS"}
+    sample_client.update_shadow_attribute.assert_awaited_once_with(
+        unit_uuid="u1",
+        entity_uuid="e1",
+        device_uuid="d1",
+        attributes={
+            "instanceId": 0,
+            "serviceName": "doorbell",
+            "attributeName": "dndEnabled",
+            "attributeValue": "true",
+        },
+    )
+
+    res_cmd = await dev.reboot()
+    assert res_cmd == {"status": "SUCCESS"}
+    sample_client.send_command.assert_awaited_once_with(
+        unit_uuid="u1",
+        entity_uuid="e1",
+        device_uuid="d1",
+        command={
+            "devices": {
+                "handleName": "Dev 1",
+                "deviceUUID": "d1",
+                "services": {
+                    "deviceReboot": {
+                        "commands": {
+                            "reboot": {
+                                "parameters": {},
+                                "instanceId": 0,
+                            }
+                        }
+                    }
+                },
+            }
+        },
+    )
+
+
+@pytest.mark.asyncio
+async def test_camera_get_vms_doorbell_events(sample_client):
+    """Verify camera.get_vms_doorbell_events calls client.get_vms_doorbell_events."""
+    from qubopy.devices.camera import QuboCamera
+
+    info = DeviceModelInfo(
+        uuid="cam1",
+        deviceId="cam1",
+        name="Doorbell Pro",
+        unitUUID="u1",
+        entityUUID="e1",
+    )
+    cam = QuboCamera(info, sample_client)
+    sample_client.get_vms_doorbell_events = AsyncMock(
+        return_value=[{"transactionUUID": "tx-1", "createdTimestamp": 1700000000000}]
+    )
+
+    events = await cam.get_vms_doorbell_events()
+    assert len(events) == 1
+    assert events[0]["transactionUUID"] == "tx-1"
+    sample_client.get_vms_doorbell_events.assert_awaited_once_with(
+        unit_uuid="u1",
+        device_uuid="cam1",
+    )
+
+
 def test_all_modules_have_docstrings():
     """Verify that every module under qubopy defines a non-empty module docstring."""
     assert qubopy.__doc__, "qubopy package root is missing a docstring"
     for info in pkgutil.walk_packages(qubopy.__path__, prefix="qubopy."):
         mod = importlib.import_module(info.name)
         assert mod.__doc__, f"Module {info.name} is missing a docstring"
-
-
-
-
-
-
-

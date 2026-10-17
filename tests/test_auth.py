@@ -251,7 +251,6 @@ async def test_phone_otp_select_by_index_and_uuid():
     await auth.close()
 
 
-
 @pytest.mark.asyncio
 async def test_token_refresh():
     """Verify proactive or manual session refresh."""
@@ -529,8 +528,8 @@ async def test_refresh_session_success():
 
 
 @pytest.mark.asyncio
-async def test_refresh_session_omitted_refresh_token_clears_spent_token():
-    """Verify that a successful refresh returning no new refreshToken clears the spent token."""
+async def test_refresh_session_omitted_refresh_token_preserves_static_token():
+    """Verify that a refresh omitting refreshToken preserves the static 180-day token."""
     auth = QuboAuth()
     auth.set_tokens(
         access_token="old-token",
@@ -548,7 +547,7 @@ async def test_refresh_session_omitted_refresh_token_clears_spent_token():
     with patch("aiohttp.ClientSession.post", return_value=mock_resp):
         tokens = await auth.refresh_session()
         assert tokens.access_token == refresh_payload["accessToken"]
-        assert tokens.refresh_token is None
+        assert tokens.refresh_token == "old-refresh-token"
 
     await auth.close()
 
@@ -574,5 +573,3 @@ async def test_refresh_session_rejection_clears_tokens():
         assert auth.tokens is None
 
     await auth.close()
-
-
