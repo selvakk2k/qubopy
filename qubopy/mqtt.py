@@ -123,9 +123,8 @@ class QuboMqttListener:
         self._broker_port = broker_port
         self._on_auth_failure = on_auth_failure
 
-        if loop is not None:
-            self._loop = loop
-        else:
+        self._loop: asyncio.AbstractEventLoop | None = loop
+        if self._loop is None:
             try:
                 self._loop = asyncio.get_running_loop()
             except RuntimeError:
@@ -135,6 +134,7 @@ class QuboMqttListener:
         self._is_running = False
         self._stopping = False
         self._subscribed = False
+        self._subscribed_mids: set[int] = set()
         self._connect_future: asyncio.Future[bool] | None = None
         self._reconnect_task: asyncio.Task[None] | None = None
 
@@ -237,7 +237,7 @@ class QuboMqttListener:
                 discovered: list[tuple[str, str]] = []
                 for u in units:
                     if isinstance(u, dict):
-                        uid = u.get("unitUUID") or u.get("uuid")
+                        uid = u.get("unitUUID") or u.get("uuid") or u.get("unitId")
                         if uid:
                             discovered.append((str(uid), str(u.get("name", "Home"))))
                 if len(discovered) > 1:
@@ -305,6 +305,8 @@ class QuboMqttListener:
                     "Connected to Qubo MQTT broker (%s). Subscribing to monitor topics...",
                     self._broker_host,
                 )
+                self._subscribed_mids.clear()
+                self._subscribed = False
                 for u in self._unit_uuids:
                     client.subscribe(f"/monitor/{u}/#", qos=0)
 
@@ -348,7 +350,12 @@ class QuboMqttListener:
                 if is_failure:
                     has_failure = True
                     _LOGGER.warning("MQTT subscription refused by broker for MID %s: %s", mid, r)
-            self._subscribed = not has_failure
+            if has_failure:
+                self._subscribed_mids.clear()
+                self._subscribed = False
+            else:
+                self._subscribed_mids.add(mid)
+                self._subscribed = len(self._subscribed_mids) >= len(self._unit_uuids)
 
         def on_message(client: Any, userdata: Any, msg: Any) -> None:
             self._handle_raw_message(msg.topic, msg.payload)
@@ -362,6 +369,7 @@ class QuboMqttListener:
         ) -> None:
             _LOGGER.debug("Disconnected from Qubo MQTT broker: rc=%s", rc)
             self._subscribed = False
+            self._subscribed_mids.clear()
             if not self._stopping and self._is_running and self._loop and self._loop.is_running():
                 self._loop.call_soon_threadsafe(self._start_reconnect_task)
 
@@ -417,6 +425,13 @@ class QuboMqttListener:
         ):
             self._reconnect_task = self._loop.create_task(self._reconnect_worker())
 
+    @staticmethod
+    def _reconnect_sync(mqttc: Any) -> None:
+        """Synchronously stop the loop thread, reconnect socket, and restart the loop thread."""
+        mqttc.loop_stop()
+        mqttc.reconnect()
+        mqttc.loop_start()
+
     async def _reconnect_worker(self) -> None:
         """Handle bounded exponential reconnection and token renewal."""
         attempt = 0
@@ -450,9 +465,9 @@ class QuboMqttListener:
             self._mqttc.username_pw_set(username=user_uuid, password=fresh_token)
             try:
                 if self._loop is not None and self._loop.is_running():
-                    await self._loop.run_in_executor(None, self._mqttc.reconnect)
+                    await self._loop.run_in_executor(None, self._reconnect_sync, self._mqttc)
                 else:
-                    self._mqttc.reconnect()
+                    self._reconnect_sync(self._mqttc)
                 _LOGGER.info("MQTT reconnect command dispatched to broker.")
                 break
             except Exception as rec_err:
@@ -463,6 +478,7 @@ class QuboMqttListener:
         self._stopping = True
         self._is_running = False
         self._subscribed = False
+        self._subscribed_mids.clear()
 
         current_task = None
         try:

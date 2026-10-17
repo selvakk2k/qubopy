@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import shutil
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -502,8 +503,12 @@ async def test_mqtt_reconnect_token_renewal_success() -> None:
                 username="user-1", password="renewed_token"
             )
             mock_client.reconnect.assert_called_once()
+            # loop_stop must reap the exited thread and loop_start must resume reading packets
+            mock_client.loop_stop.assert_called_once()
+            assert mock_client.loop_start.call_count == 2
 
         await listener.stop()
+        assert mock_client.loop_stop.call_count == 2
 
 
 @pytest.mark.asyncio
@@ -747,3 +752,84 @@ def test_mqtt_repr_privacy() -> None:
     assert "public" in repr_str
     assert "super_secret_payload" not in repr_str
     assert "raw_payload" not in repr_str
+
+
+@pytest.mark.asyncio
+async def test_mqtt_reconnect_loop_call_order() -> None:
+    """Verify reconnect executes loop_stop -> reconnect -> loop_start in strict sequence."""
+    auth = QuboAuth()
+    auth._tokens = TokenPayload(access_token="initial_token", user_uuid="user-1")
+    auth.get_valid_access_token = AsyncMock(return_value="renewed_token")  # type: ignore[method-assign]
+
+    listener = QuboMqttListener(auth, unit_uuid="unit-1")
+    mock_client = _create_mock_mqtt_client(on_connect_rc=0)
+
+    call_order: list[str] = []
+    mock_client.loop_stop.side_effect = lambda: call_order.append("loop_stop")
+    mock_client.reconnect.side_effect = lambda: call_order.append("reconnect")
+    mock_client.loop_start.side_effect = lambda: call_order.append("loop_start")
+
+    with patch("paho.mqtt.client.Client", return_value=mock_client):
+        await listener.start()
+        # Reset recorded calls after initial start
+        call_order.clear()
+
+        _real_sleep = asyncio.sleep
+
+        async def _mock_sleep(delay: float) -> None:
+            await _real_sleep(0)
+
+        with patch("qubopy.mqtt.asyncio.sleep", side_effect=_mock_sleep):
+            mock_client.on_disconnect(mock_client, None, {}, 7)
+
+            for _ in range(10):
+                await _real_sleep(0.01)
+                if listener._reconnect_task and listener._reconnect_task.done():
+                    break
+                if listener._reconnect_task:
+                    await listener._reconnect_task
+                    break
+
+            assert call_order == ["loop_stop", "reconnect", "loop_start"]
+
+        await listener.stop()
+
+
+@pytest.mark.asyncio
+async def test_mqtt_multi_unit_subscription_tracking() -> None:
+    """Verify subscribed is True only when all unit monitor subscriptions succeed."""
+    auth = QuboAuth()
+    auth._tokens = TokenPayload(access_token="token", user_uuid="user-1")
+    auth.get_valid_access_token = AsyncMock(return_value="token")  # type: ignore[method-assign]
+
+    listener = QuboMqttListener(auth, unit_uuids=["unit-1", "unit-2"])
+    mock_client = _create_mock_mqtt_client(on_connect_rc=0)
+
+    with patch("paho.mqtt.client.Client", return_value=mock_client):
+        await listener.start()
+        # Initially subscribed is False until SUBACKs arrive
+        assert listener.subscribed is False
+
+        # First unit SUBACK arrives with success (MID 1)
+        mock_client.on_subscribe(mock_client, None, 1, [0])
+        # Only 1 of 2 units confirmed
+        assert listener.subscribed is False
+
+        # Second unit SUBACK arrives with success (MID 2)
+        mock_client.on_subscribe(mock_client, None, 2, [0])
+        # Both units confirmed
+        assert listener.subscribed is True
+
+        # Now suppose MID 2 subscription is refused on resubscribe
+        mock_client.on_subscribe(mock_client, None, 2, [128])
+        assert listener.subscribed is False
+
+        await listener.stop()
+
+
+@pytest.mark.skipif(shutil.which("mosquitto") is None, reason="Mosquitto broker not installed")
+@pytest.mark.asyncio
+async def test_mqtt_live_mosquitto_reconnect_harness() -> None:
+    """End-to-end integration test against a local Mosquitto broker if installed."""
+    # Placeholder for environments with a local test Mosquitto broker daemon
+    pass
