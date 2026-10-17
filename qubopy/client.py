@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import uuid
+import warnings
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -176,8 +177,17 @@ class QuboClient:
             Uses the APK route `PATH_GET_ALL_SHADOWS` (`GET_DEVICE_SHADOW` in Android app).
             The request payload schema is unverified against the Android app, which passes
             an opaque string filter; an empty dictionary is sent by default.
-            The `unit_uuid` parameter is retained for backwards compatibility.
+            The `unit_uuid` parameter is ignored (the backend endpoint does not accept unit
+            scoping) and is retained solely for backwards compatibility. Passing a non-empty
+            `unit_uuid` emits a DeprecationWarning.
         """
+        if unit_uuid:
+            warnings.warn(
+                "The 'unit_uuid' parameter on get_all_shadows is unused and ignored "
+                "by the Qubo backend; it will be removed in a future release.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
         path = PATH_GET_ALL_SHADOWS.format(sp=self.sp_id)
         try:
             resp = await self.request("POST", path, json_data={})

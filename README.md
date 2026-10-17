@@ -343,15 +343,15 @@ Understanding the separation between real-time telemetry, local MicroSD card rec
 
 * **Real-Time Motion & Telemetry Delivery**:
   * Real-time motion and person detection events are pushed live to `/monitor/{unit_uuid}/{device_uuid}/#` on `ooiService` or `motionDetection`.
-  * On tested accounts, live MQTT telemetry delivered device status updates without requiring an active cloud subscription.
-  * Motion status was observed not to be retained in the cloud REST device shadow; clients must subscribe via `QuboMqttListener` to receive motion triggers in real time.
+  * Connecting and authenticating to the MQTT broker succeeds without an active cloud subscription; whether motion telemetry packets are pushed without a paid subscription is reported but not independently verified on hardware.
+  * Motion status is not retained in the cloud REST device shadow; clients must subscribe via `QuboMqttListener` to receive motion triggers in real time.
 
 * **Video Doorbell Motion Configuration (`vdbTriggerEventType`)**:
-  * Qubo Video Doorbells (`HCD` series) include a `vdbTriggerEventType` setting. In tested units, setting this to `"doorbellPressed"` fired events only on physical chime button presses while suppressing PIR motion packets.
+  * Qubo Video Doorbells (`HCD` series) include a `vdbTriggerEventType` setting. Based on application disassembly, setting this to `"doorbellPressed"` is reported to fire events only on physical chime button presses while suppressing PIR motion packets, but this behavior has not been independently verified on physical hardware.
   * To receive motion/person detection events from a Video Doorbell over MQTT, users can open the official Qubo mobile app (**Doorbell Settings -> Detection Settings**) and enable **Person Detection** or **Motion Detection**.
 
 * **MicroSD Card Storage vs Cloud DVR Endpoints**:
-  * `camera.get_events()`, `get_device_events()`, and `get_ooi_events()` query the **Cloud DVR (AWS S3)** storage service. On tested accounts without an active paid cloud recording subscription, these REST endpoints returned 0 events.
+  * `camera.get_events()`, `get_device_events()`, and `get_ooi_events()` query the **Cloud DVR (AWS S3)** storage service. These REST endpoints are reported to return 0 events on accounts without an active paid cloud recording subscription.
   * Cameras and doorbells with a MicroSD card installed record high-definition event clips locally. SD card capacity and status can be inspected using `camera.get_storage_info()`. Playback of SD card video in the mobile application is streamed directly from the camera via local P2P/RTSP rather than through the cloud REST API.
 
 #### C. Video Streaming Pathways

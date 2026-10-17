@@ -47,6 +47,18 @@ async def test_get_all_shadows(sample_client):
 
 
 @pytest.mark.asyncio
+async def test_get_all_shadows_unit_uuid_deprecation(sample_client):
+    """Verify that passing unit_uuid emits a DeprecationWarning."""
+    mock_resp = MockClientResponse(200, json.dumps([]))
+    with (
+        patch("aiohttp.ClientSession.request", return_value=mock_resp),
+        pytest.deprecated_call(match="The 'unit_uuid' parameter on get_all_shadows is unused"),
+    ):
+        await sample_client.get_all_shadows(unit_uuid="legacy-unit-123")
+    await sample_client.close()
+
+
+@pytest.mark.asyncio
 async def test_get_all_devices_factory(sample_client):
     """Verify device factory correctly instantiates typed devices."""
     units_data = [{"unitUUID": "u1", "name": "Kitchen"}]
