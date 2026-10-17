@@ -343,8 +343,8 @@ Understanding the separation between real-time telemetry, local MicroSD card rec
 
 * **Real-Time Motion & Telemetry Delivery**:
   * Real-time motion and person detection events are pushed live to `/monitor/{unit_uuid}/{device_uuid}/#` on `ooiService` or `motionDetection`.
-  * Connecting and authenticating to the MQTT broker was observed to succeed on tested accounts without requiring an active cloud subscription; whether real-time motion telemetry packets are pushed without a subscription is reported but not independently verified on hardware.
-  * Motion status was observed not to be retained in the cloud REST device shadow; clients must subscribe via `QuboMqttListener` to receive motion triggers in real time.
+  * Connecting and authenticating to the MQTT broker was verified on real hardware without an active cloud subscription; whether real-time motion telemetry packets are pushed without a subscription is reported but not independently verified.
+  * Examined device shadows do not expose persistent motion trigger state; clients subscribe via `QuboMqttListener` to receive real-time motion events.
 
 * **Video Doorbell Motion Configuration (`vdbTriggerEventType`)**:
   * Qubo Video Doorbells (`HCD` series) include a `vdbTriggerEventType` setting. Based on application disassembly, setting this to `"doorbellPressed"` is reported to fire events only on physical chime button presses while suppressing PIR motion packets, but this behavior has not been independently verified on physical hardware.
