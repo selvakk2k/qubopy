@@ -32,9 +32,7 @@ PATH_UNIT_DEVICES: str = (
 PATH_GET_DEVICES: str = (
     "/unit-entity-management/api/v1/sp/{sp}/units/{unit_uuid}/entities/{entity_uuid}/devices/self"
 )
-PATH_GET_ALL_SHADOWS: str = (
-    "/unit-entity-management/api/v1/sp/{sp}/units/{unit_uuid}/devices/shadow"
-)
+PATH_GET_ALL_SHADOWS: str = "/unit-entity-management/api/v1/sp/{sp}/devices/shadow"
 PATH_GET_DEVICE_SHADOW: str = (
     "/unit-entity-management/api/v1/sp/{sp}/units/{unit_uuid}/entities/{entity_uuid}/devices/{device_uuid}/shadow"
 )

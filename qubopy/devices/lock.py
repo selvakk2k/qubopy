@@ -232,8 +232,12 @@ class QuboLock(QuboDevice):
     ) -> dict[str, Any]:
         """Generate a temporary one-time keypad PIN code for guest access.
 
+        Note:
+            The Android app sends an empty JSON array (`[]`) and parses a JSON array response.
+            `validity_minutes` is experimental / unverified (not sent by Android app).
+
         Args:
-            validity_minutes: Optional expiration window in minutes.
+            validity_minutes: Optional expiration window in minutes (experimental / unverified).
         """
         if not self.client:
             raise QuboCommandError("Device client not initialized")
@@ -243,6 +247,10 @@ class QuboLock(QuboDevice):
 
     async def revoke_guest_otp(self, otp: str | None = None) -> dict[str, Any]:
         """Revoke an active temporary guest OTP PIN.
+
+        Warning:
+            EXPERIMENTAL / UNVERIFIED: This route is not present in the Android app;
+            behavior on real lock hardware is unknown.
 
         Args:
             otp: Optional specific OTP string to invalidate.

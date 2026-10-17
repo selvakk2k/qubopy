@@ -80,7 +80,7 @@ class QuboClient:
         self,
         method: str,
         path: str,
-        json_data: dict[str, Any] | None = None,
+        json_data: dict[str, Any] | list[Any] | None = None,
         params: dict[str, Any] | None = None,
         retry: bool = False,
     ) -> Any:
@@ -170,11 +170,15 @@ class QuboClient:
             )
 
     async def get_all_shadows(self, unit_uuid: str = "") -> dict[str, DeviceShadow]:
-        """Fetch all device shadow states in bulk via POST."""
-        if unit_uuid:
-            path = PATH_GET_ALL_SHADOWS.format(sp=self.sp_id, unit_uuid=unit_uuid)
-        else:
-            path = f"/unit-entity-management/api/v1/sp/{self.sp_id}/devices/shadow"
+        """Fetch all device shadow states in bulk via POST.
+
+        Note:
+            Uses the APK route `PATH_GET_ALL_SHADOWS` (`GET_DEVICE_SHADOW` in Android app).
+            The request payload schema is unverified against the Android app, which passes
+            an opaque string filter; an empty dictionary is sent by default.
+            The `unit_uuid` parameter is retained for backwards compatibility.
+        """
+        path = PATH_GET_ALL_SHADOWS.format(sp=self.sp_id)
         try:
             resp = await self.request("POST", path, json_data={})
         except QuboAuthError:
@@ -444,12 +448,21 @@ class QuboClient:
     ) -> dict[str, Any]:
         """Generate a temporary one-time keypad guest PIN for a smart lock.
 
+        Note:
+            The Android app sends an empty JSON array (`[]`) and parses a JSON array
+            response. The `validity_minutes` option is experimental / unverified (not sent
+            by the Android app, server behavior unknown). When omitted, this client sends `[]`
+            matching the app. Returns the server response dictionary, or `{"raw": [...]}`
+            if the server returns a JSON array.
+
         Args:
             device_uuid: Target lock device UUID.
-            validity_minutes: Optional expiration window in minutes.
+            validity_minutes: Optional expiration window in minutes (experimental / unverified).
         """
         path = PATH_LOCK_OTP.format(sp=self.sp_id, device_uuid=device_uuid)
-        payload = {"validity": validity_minutes} if validity_minutes is not None else None
+        payload: dict[str, Any] | list[Any] = (
+            [] if validity_minutes is None else {"validity": validity_minutes}
+        )
         resp = await self.request("POST", path, json_data=payload)
         return resp if isinstance(resp, dict) else {"raw": resp}
 
@@ -459,6 +472,11 @@ class QuboClient:
         otp: str | None = None,
     ) -> dict[str, Any]:
         """Revoke a temporary guest OTP PIN for a smart lock.
+
+        Warning:
+            EXPERIMENTAL / UNVERIFIED: This route is not present in the Android app
+            (which only exposes `DELETE_PINCODE` on `.../lock/pin/{pinId}` and `REFRESH_OTP`).
+            Behavior on real lock hardware is unknown.
 
         Args:
             device_uuid: Target lock device UUID.
@@ -785,7 +803,13 @@ class QuboClient:
         device_uuid: str,
         attributes: dict[str, Any],
     ) -> dict[str, Any]:
-        """Update desired shadow attribute directly."""
+        """Update desired shadow attribute directly.
+
+        Note:
+            UNVERIFIED: The `.../shadow/attribute` route exists only in native code
+            (`libcore-main.so`). The HTTP method (`PUT`) is inferred from the sibling
+            `/command` route rather than verified in the Java Retrofit app layer.
+        """
         if not device_uuid:
             raise ValueError("device_uuid must be provided to update shadow attribute")
         if not unit_uuid:

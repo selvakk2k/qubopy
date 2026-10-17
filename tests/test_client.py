@@ -32,12 +32,16 @@ async def test_get_all_shadows(sample_client):
     ]
 
     mock_resp = MockClientResponse(200, json.dumps(bulk_data))
-    with patch("aiohttp.ClientSession.request", return_value=mock_resp):
+    with patch("aiohttp.ClientSession.request", return_value=mock_resp) as mock_req:
         shadows = await sample_client.get_all_shadows()
         assert len(shadows) == 2
         assert "dev-001" in shadows
         assert shadows["dev-001"].reported["state"] == "ON"
         assert shadows["dev-001"].reported["power"] == 1250.5
+        assert mock_req.call_args[0][0] == "POST"
+        expected_path = f"/unit-entity-management/api/v1/sp/{sample_client.sp_id}/devices/shadow"
+        assert mock_req.call_args[0][1].endswith(expected_path)
+        assert "/units/" not in mock_req.call_args[0][1]
 
     await sample_client.close()
 
@@ -447,14 +451,24 @@ async def test_client_get_device_events(sample_client):
 
 @pytest.mark.asyncio
 async def test_client_generate_lock_otp(sample_client):
-    """Verify generate_lock_otp calls roi-manager POST endpoint with optional validity."""
-    mock_resp = MockClientResponse(200, json.dumps({"otp": "987654", "validTill": 1728000}))
-    with patch("aiohttp.ClientSession.request", return_value=mock_resp) as mock_req:
-        res = await sample_client.generate_lock_otp("lock-123", validity_minutes=30)
-        assert res["otp"] == "987654"
+    """Verify generate_lock_otp sends empty array by default and handles responses.
+    """
+    # 1. Default payload without validity_minutes sends [] matching Android app
+    mock_array_resp = MockClientResponse(200, json.dumps([{"otp": "123456", "validTill": 1728000}]))
+    with patch("aiohttp.ClientSession.request", return_value=mock_array_resp) as mock_req:
+        res = await sample_client.generate_lock_otp("lock-123")
+        assert res == {"raw": [{"otp": "123456", "validTill": 1728000}]}
         assert mock_req.call_args[0][0] == "POST"
         assert "/roi-manager/api/v1/sp/" in mock_req.call_args[0][1]
         assert "/device/lock-123/lock/pin/otp" in mock_req.call_args[0][1]
+        assert mock_req.call_args[1]["json"] == []
+
+    # 2. Experimental validity_minutes sends dict payload and parses dict response
+    mock_dict_resp = MockClientResponse(200, json.dumps({"otp": "987654", "validTill": 1728000}))
+    with patch("aiohttp.ClientSession.request", return_value=mock_dict_resp) as mock_req:
+        res2 = await sample_client.generate_lock_otp("lock-123", validity_minutes=30)
+        assert res2["otp"] == "987654"
+        assert mock_req.call_args[0][0] == "POST"
         assert mock_req.call_args[1]["json"] == {"validity": 30}
 
     await sample_client.close()

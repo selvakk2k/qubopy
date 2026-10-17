@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.5] - 2026-10-17
+
+### Added
+- **Route Pinning Tests**: Added `tests/test_routes.py` with table-driven assertions pinning core HTTP routes and methods against Android APK constants (`ObotApi.java`).
+- **Lock OTP Payloads & Responses**: Updated `generate_lock_otp` to send an empty JSON array (`[]`) matching the Android app when options are omitted, and safely handle array response structures (`{"raw": [...]}`).
+
+### Changed
+- **Parameter Validation**: `unit_uuid` and `entity_uuid` are now strictly required for shadow and command calls, raising `ValueError` instead of silently falling back to `"default"`.
+- **Experimental Lock Methods**: Labeled `QuboLock.revoke_guest_otp` / `QuboClient.revoke_lock_otp` as experimental / unverified (route is not present in the Android app; behavior on physical locks unknown). Labeled `validity_minutes` in `generate_lock_otp` as experimental (not sent by Android app).
+
+### Fixed
+- **Bulk Shadows Route**: Restored `PATH_GET_ALL_SHADOWS` to `/unit-entity-management/api/v1/sp/{sp}/devices/shadow` (`GET_DEVICE_SHADOW` in APK; the `/units/{unit_uuid}` variant does not exist in the app).
+
+### Documentation
+- **Unverified Claims Relabeled**: Clarified empirical observations in README regarding free MQTT telemetry, cloud DVR vs local MicroSD endpoints, and doorbell motion detection configuration (`vdbTriggerEventType`).
+- **Hardware Matrix**: Corrected matrix to distinguish RTSPS live stream Start (hardware verified) from Stop (route verified only), and documented lock testing scope.
+- **Lock Examples**: Moved lock OTP revocation out of the main gateway example into an explicit "Experimental" subsection with warnings.
+
+> **Note**: Reconnect and auth-failure handling verified against a local Mosquitto broker. MQTT connect/auth/subscribe and camera events tested on a real Qubo camera. Lock events (`lockControl`) and live token-expiry behavior remain untested.
+
 ## [0.1.4] - 2026-10-17
 
 ### Fixed

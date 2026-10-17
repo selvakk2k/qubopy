@@ -55,10 +55,10 @@ The Qubo smart home ecosystem consists of two distinct communication models:
 | Series | Category | Example Models | Functions & Sensors | Integration Mode | Status |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **Auth** | Cloud Session | N/A | Email + Password, Phone SMS OTP | Cloud REST (`/user/login?system=CS`, `/phone/verify`) | `✅ Hardware Verified` |
-| `HCP` / `HCO` | Cameras | `HCP01`–`HCP19`, `HCO04`–`HCO07` | Cloud RTSPS Live Stream (Start/Stop), Privacy Mask, Siren, Motion Status, Storage Diagnostics | Cloud REST + Local RTSP / P2P | `✅ Hardware Verified` |
+| `HCP` / `HCO` | Cameras | `HCP01`–`HCP19`, `HCO04`–`HCO07` | Cloud RTSPS Live Stream (Start: `✅ Hardware Verified` / Stop: `⚠️ Route Verified`), Privacy Mask, Siren, Motion Status, Storage Diagnostics | Cloud REST + Local RTSP / P2P | `✅ Hardware Verified` |
 | `HCD` | Doorbells | `HCD01`, `HCD04` | Ring Event, Chime, RTSP Stream / LAN P2P | Cloud REST + Local RTSP / P2P | `✅ Hardware Verified` |
 | `HCA` | Dashcams | `HCA08B`, Smart Dashcam Pro | In-Car Wi-Fi AP Credentials, Parking Mode, Speed Warning | Cloud REST | `✅ Hardware Verified` |
-| `HLM` / `HLW` | Door Locks | `HLM01`–`HLM10`, `HLR01`, `HLW01` | Remote Unlock, Live State/Battery Query, Guest OTP PIN, Offline BLE Key Export | Cloud Gateway / Local BLE | Gateway: `✅ Hardware Verified`<br>BLE: `⚠️ Experimental` |
+| `HLM` / `HLW` | Door Locks | `HLM01`–`HLM10`, `HLR01`, `HLW01` | Remote Unlock, Live State/Battery Query (v2 route: verified via downstream integration), Guest OTP PIN (`⚠️ Route Verified`), Revoke OTP (`⚠️ Experimental`), Offline BLE Key Export | Cloud Gateway / Local BLE | Gateway: `✅ Hardware Verified`<br>BLE / OTP: `⚠️ Experimental` |
 | `HSP` | Smart Plugs | `HSP01` (16A), `HSP02` (10A), `HSP10` | Switch, Voltage, Current, Active Power (W), Energy (kWh) | Cloud REST | `⚠️ API Modeled` |
 | `HPH` | Air Purifiers | `HPH01`–`HPH08` (Q200 to Q1000) | Fan Speed, Auto/Sleep Presets, PM2.5, Filter Life, Child Lock | Cloud REST | `⚠️ API Modeled` |
 | `HLB` | Smart Lighting | `HLB01`, `HLB10` | State, Brightness, RGB Color, White Temperature | Cloud REST | `⚠️ API Modeled` |
@@ -341,18 +341,17 @@ async def operate_camera(camera: QuboCamera):
 
 Understanding the separation between real-time telemetry, local MicroSD card recording, and cloud storage:
 
-* **Real-Time Motion vs Ephemeral MQTT**:
-  * Real-time motion and person detection events are **ephemeral wire packets** pushed to `/monitor/{unit_uuid}/{device_uuid}/#` on `ooiService` or `motionDetection`.
-  * Real-time MQTT telemetry is completely **free** and does not require an active cloud subscription.
-  * Motion status is not retained in the cloud REST device shadow; clients must subscribe via `QuboMqttListener` to capture motion triggers in real time.
+* **Real-Time Motion & Telemetry Delivery**:
+  * Real-time motion and person detection events are pushed live to `/monitor/{unit_uuid}/{device_uuid}/#` on `ooiService` or `motionDetection`.
+  * On tested accounts, live MQTT telemetry delivered device status updates without requiring an active cloud subscription.
+  * Motion status was observed not to be retained in the cloud REST device shadow; clients must subscribe via `QuboMqttListener` to receive motion triggers in real time.
 
 * **Video Doorbell Motion Configuration (`vdbTriggerEventType`)**:
-  * Qubo Video Doorbells (`HCD` series) default in firmware to `"vdbTriggerEventType": "doorbellPressed"` to maximize battery life and minimize nuisance rings.
-  * When set to `doorbellPressed`, the doorbell firmware **only fires events on physical chime button presses**, suppressing PIR motion packets.
-  * To receive motion/person detection events from a Video Doorbell over MQTT, users must open the official Qubo mobile app (**Doorbell Settings -> Detection Settings**) and enable **Person Detection** or **Motion Detection**.
+  * Qubo Video Doorbells (`HCD` series) include a `vdbTriggerEventType` setting. In tested units, setting this to `"doorbellPressed"` fired events only on physical chime button presses while suppressing PIR motion packets.
+  * To receive motion/person detection events from a Video Doorbell over MQTT, users can open the official Qubo mobile app (**Doorbell Settings -> Detection Settings**) and enable **Person Detection** or **Motion Detection**.
 
 * **MicroSD Card Storage vs Cloud DVR Endpoints**:
-  * `camera.get_events()`, `get_device_events()`, and `get_ooi_events()` query the **Cloud DVR (AWS S3)** storage service. Without an active paid cloud recording subscription, these REST endpoints return 0 events.
+  * `camera.get_events()`, `get_device_events()`, and `get_ooi_events()` query the **Cloud DVR (AWS S3)** storage service. On tested accounts without an active paid cloud recording subscription, these REST endpoints returned 0 events.
   * Cameras and doorbells with a MicroSD card installed record high-definition event clips locally. SD card capacity and status can be inspected using `camera.get_storage_info()`. Playback of SD card video in the mobile application is streamed directly from the camera via local P2P/RTSP rather than through the cloud REST API.
 
 #### C. Video Streaming Pathways
@@ -487,12 +486,9 @@ async def unlock_door(lock: QuboLock):
     print(f"State Timestamp : {lock.last_lock_state_timestamp} ms")
     print(f"Live Battery    : {live_battery}% (cached: {lock.battery_percent}%)")
 
-    # Generate temporary guest OTP PIN (with optional expiration in minutes)
-    otp = await lock.generate_guest_otp(validity_minutes=30)
-    print(f"Guest PIN OTP   : {otp.get('otp')} (valid till: {otp.get('validTill')})")
-
-    # Revoke an active guest OTP PIN
-    await lock.revoke_guest_otp(otp.get("otp"))
+    # Generate temporary guest OTP PIN (app sends [] body by default)
+    otp_resp = await lock.generate_guest_otp()
+    print(f"Guest OTP Response: {otp_resp}")
 ```
 
 #### Method B: Local BLE Key Export & ESPHome Configuration (`⚠️ Experimental`)
@@ -568,6 +564,26 @@ button:
           characteristic_uuid: "0000fee1-0000-1000-8000-00805f9b34fb"
           # Payload requires AES handshake using exported dbtauthkey
           value: [0x00]
+```
+
+#### Method C: Guest Keypad OTP PINs (`⚠️ Experimental`)
+
+> [!WARNING]
+> **Experimental / Hardware Unverified**: Generating guest OTP PINs uses `POST .../lock/pin/otp` matching the official app's `GENERATE_OTP` route. The optional `validity_minutes` parameter is not present in the Android app. Revocation via `DELETE .../lock/pin/otp` is unverified (the official app exposes `DELETE_PINCODE` on individual pin IDs). Behavior on physical locks is unknown.
+
+```python
+async def manage_lock_otp(lock: QuboLock):
+    # Generate temporary guest OTP PIN (server may return dict or array wrapped in {'raw': [...]})
+    otp_resp = await lock.generate_guest_otp()
+    print(f"Guest OTP Response: {otp_resp}")
+
+    # Experimental: generate with custom expiration window in minutes
+    custom_otp = await lock.generate_guest_otp(validity_minutes=30)
+    print(f"Custom Expiry OTP Response: {custom_otp}")
+
+    # Experimental: revoke an active guest OTP PIN
+    revoke_resp = await lock.revoke_guest_otp(otp="123456")
+    print(f"Revoke Response: {revoke_resp}")
 ```
 
 ---
