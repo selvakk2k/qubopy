@@ -8,17 +8,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.1.3] - 2026-10-17
 
 ### Added
-- **Camera Stream Teardown API**: Added `LiveStreamUrl(str)` preserving `app_session_id` and `instance_id` metadata from `get_live_stream_url(...)`, added `stop_live_stream(...)` to `QuboClient` implementing `DELETE /stream-manager/api/v2/sp/{sp}/stream/unit/{unit}/device/{device}`, and added session tracking with `start_stream(...)` / `stop_stream(...)` to `QuboCamera`.
-- **Live Mosquitto Test Suite**: Added real Mosquitto broker test harness in `tests/test_mqtt_live.py` to verify broker drop/reconnect, token rotation, auth failure termination, and subscription timing.
-- **Mypy Type Checking in CI**: Integrated `mypy` with the `pydantic.mypy` plugin in `pyproject.toml` and GitHub Actions CI workflow.
+- **`QuboMqttListener` / `QuboMqttEvent`** (optional extra: `pip install "qubopy[mqtt]"`): Real-time events from `/monitor/{unit}/#` using user UUID and access token as broker credentials; automatic unit discovery or explicit `unit_uuids`; `add_event_listener(...)` with optional `device_id` and `service_name` filters; `seed_state()` from REST v2 shadow; `wait_subscribed()`; `on_auth_failure` callback; automatic reconnect with token refresh and bounded backoff; and sensitive key redaction in debug logs. Subscribes to `/monitor` only.
+- **v2 Device Shadow Reads**: Added `QuboClient.get_device_shadow_v2(...)`; `QuboLock.fetch_live_lock_state` and `fetch_live_battery` (parsed against known lock states, timestamps normalized to milliseconds, battery clamped 0–100); and `QuboLock.last_lock_state_timestamp`.
+- **Telemetry & Event Endpoints**: Added `get_device_events`, `get_ooi_events`, `get_lock_events`, `generate_lock_otp` / `QuboLock.generate_guest_otp`, `get_plug_energy_history` / `QuboPlug.get_energy_history`, `get_device_storage` / `QuboCamera.get_storage_info`, and `get_purifier_pm25_insights` / `QuboAirPurifier.get_pm25_insights`.
+- **Camera Streaming**: Added `QuboClient.stop_live_stream` / `QuboCamera.stop_stream` implementing cloud stream session teardown via `DELETE /stream-manager/api/v2/...`, and `LiveStreamUrl` (a `str` subclass retaining `app_session_id` and `instance_id` without breaking standard string usage).
+- **Experimental Local P2P Streaming**: Added `QuboClient.initiate_p2p_call` (marked unverified on physical hardware).
+- **CLI Logging**: Added `-v` and `--debug` verbose logging flags to the CLI.
+- **Testing & Verification**: Added real Mosquitto broker live test suite in `tests/test_mqtt_live.py` and integrated `mypy` with `pydantic.mypy` into GitHub Actions CI.
+
+### Changed
+- `QuboClient.get_live_stream_url` and `QuboCamera.start_stream` now return `LiveStreamUrl` instead of a plain `str` (subclasses `str` for 100% backward compatibility).
+- Internal model instantiations in `qubopy.auth` and `qubopy.client` now use standard Python field names instead of JSON aliases.
+
+### Removed
+- **`PATH_MQTT_CREDENTIALS`**: Removed from `const.py`. The endpoint pointed to the app's *remove MQTT connection* (`DELETE`) route rather than credentials, as the MQTT broker authenticates directly with the user UUID and JWT access token. Callers importing this constant must remove it.
 
 ### Fixed
-- **MQTT Reconnection Loop**: Restart Paho network loop (`mqttc.loop_start()`) when reconnecting after socket closure, ensuring listener resumes receiving events after broker disconnects.
-- **Thread-Safe Subscription Notification**: Dispatched `_subscribed_event.set()` and `.clear()` through `loop.call_soon_threadsafe(...)` from Paho's network loop thread, preventing `wait_subscribed()` from blocking for the full timeout.
+- **MQTT Network Loop on Reconnect**: Ensured Paho's network loop restarts (`mqttc.loop_start()`) when reconnecting after socket closure.
+- **Thread-Safe Event Loop Signaling**: Dispatched `_subscribed_event.set()` and `.clear()` via `loop.call_soon_threadsafe(...)` from Paho's network thread, preventing `wait_subscribed()` from blocking for the full timeout.
 - **Multi-Unit SUBACK Tracking**: Accurately track subscription completion across multiple unit topic subscriptions.
-- **Model Instantiation Typing**: Harmonized `TokenPayload` and `DeviceModelInfo` instantiation keyword arguments in `qubopy.auth` and `qubopy.client` to standard Python attribute names.
+- **Documentation**: Corrected MQTT topic hierarchies (`/monitor/{unit}/#` and `/control/{unit}/{device}/{service}`), clarified token-based authentication, noted broker rejection of `/config/...`, and added a Verification Status table.
 
-> **Note**: Reconnect and auth-failure handling verified against a local broker; lock events untested.
+> **Note**: Reconnect and auth-failure handling verified against a local Mosquitto broker. MQTT connect/auth/subscribe and camera events tested on a real Qubo camera. Lock events (`lockControl`) and live token-expiry behavior are untested.
 
 ## [0.1.2] - 2026-10-12
 
