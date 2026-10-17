@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.1.3] - 2026-10-17
 
 ### Added
-- **`QuboMqttListener` / `QuboMqttEvent`** (optional extra: `pip install "qubopy[mqtt]"`): Real-time events from `/monitor/{unit}/#` using user UUID and access token as broker credentials; automatic unit discovery or explicit `unit_uuids`; `add_event_listener(...)` with optional `device_id` and `service_name` filters; `seed_state()` from REST v2 shadow; `wait_subscribed()`; `on_auth_failure` callback; automatic reconnect with token refresh and bounded backoff; and sensitive key redaction in debug logs. Subscribes to `/monitor` only.
+- **`QuboMqttListener` / `QuboMqttEvent`** (optional extra: `pip install "qubopy[mqtt]"`): Real-time events from `/monitor/{unit}/#` using user UUID and access token as broker credentials; automatic unit discovery or explicit `unit_uuids`; `add_event_listener(...)` with optional `device_uuid` and `service` filters; `seed_state()` from REST v2 shadow; `wait_subscribed()`; `on_auth_failure` callback; automatic reconnect with token refresh and bounded backoff; and sensitive key redaction in debug logs. Subscribes to `/monitor` only.
 - **v2 Device Shadow Reads**: Added `QuboClient.get_device_shadow_v2(...)`; `QuboLock.fetch_live_lock_state` and `fetch_live_battery` (parsed against known lock states, timestamps normalized to milliseconds, battery clamped 0–100); and `QuboLock.last_lock_state_timestamp`.
 - **Telemetry & Event Endpoints**: Added `get_device_events`, `get_ooi_events`, `get_lock_events`, `generate_lock_otp` / `QuboLock.generate_guest_otp`, `get_plug_energy_history` / `QuboPlug.get_energy_history`, `get_device_storage` / `QuboCamera.get_storage_info`, and `get_purifier_pm25_insights` / `QuboAirPurifier.get_pm25_insights`.
 - **Camera Streaming**: Added `QuboClient.stop_live_stream` / `QuboCamera.stop_stream` implementing cloud stream session teardown via `DELETE /stream-manager/api/v2/...`, and `LiveStreamUrl` (a `str` subclass retaining `app_session_id` and `instance_id` without breaking standard string usage).
@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - `QuboClient.get_live_stream_url` and `QuboCamera.start_stream` now return `LiveStreamUrl` instead of a plain `str` (subclasses `str` for 100% backward compatibility).
+- `TokenPayload.mqtt_password` / `QuboAuth.mqtt_password`: Preserved if present in cloud login responses, but unverified on physical hardware and not used by `QuboMqttListener` (which authenticates using the account JWT access token).
 - Internal model instantiations in `qubopy.auth` and `qubopy.client` now use standard Python field names instead of JSON aliases.
 
 ### Removed

@@ -121,7 +121,10 @@ class QuboAuth:
 
     @property
     def mqtt_password(self) -> str | None:
-        """Return persistent MQTT broker password for the user, if provided by cloud."""
+        """Return MQTT broker password if present in login response.
+
+        Unverified on hardware; not used by the listener.
+        """
         return self._tokens.mqtt_password if self._tokens else None
 
     @property

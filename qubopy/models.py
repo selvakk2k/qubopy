@@ -14,7 +14,12 @@ class TokenPayload(BaseModel):
     refresh_token: str | None = Field(default=None, alias="refreshToken", repr=False)
     user_uuid: str = Field(alias="uuid")
     token_type: str = Field(default="accessToken", alias="tokenType")
-    mqtt_password: str | None = Field(default=None, alias="mqttPassword", repr=False)
+    mqtt_password: str | None = Field(
+        default=None,
+        alias="mqttPassword",
+        repr=False,
+        description="Stored if present in cloud login response; unverified; not used by listener",
+    )
     expires_at: float | None = None
 
 

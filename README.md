@@ -345,13 +345,17 @@ Cloud Wowza RTSPS provides remote video access without requiring direct LAN reac
 
 ```python
 # Mint an authenticated cloud RTSPS streaming URL ('high' or 'low')
+# Returns a LiveStreamUrl (str subclass) carrying app_session_id and instance_id
 stream_url = await camera.start_stream(quality="high")
 print(f"RTSPS Stream URL: {stream_url}")
 # Format: rtsps://wowza.platform.quboworld.com:443/live/<device_id>?token=<ephemeral_token>
+
+# Tear down the cloud stream session when playback completes
+await camera.stop_stream()
 ```
 
 > [!NOTE]
-> Cloud Wowza URLs are single-consumer sessions. Opening the stream in a media player or restreaming software terminates any active stream session using the same token.
+> Cloud Wowza URLs are single-consumer sessions. Opening the stream in a media player or restreaming software terminates any active stream session using the same token. Invoke `await camera.stop_stream()` when playback ends to release server-side stream session resources.
 
 ##### 2. Local Peer-to-Peer (P2P) UDP Streaming (`camera.initiate_p2p_call()`) (`⚠️ Experimental`)
 
