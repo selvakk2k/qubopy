@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.6] - 2026-10-17
+
+### Changed
+- **Bulk Shadows Parameter**: Explicitly documented that `unit_uuid` is ignored on `get_all_shadows`, emitting a `DeprecationWarning` when passed.
+
+### Documentation
+- **Empirical Claims Refined**: Softened claims in README regarding subscription-less motion telemetry, doorbell chime suppression, and cloud DVR endpoints to indicate they are reported or reverse-engineered rather than physically tested. Restored observational qualifier on cloud REST shadow motion behavior.
+
 ## [0.1.5] - 2026-10-17
 
 ### Added
@@ -12,14 +20,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Lock OTP Payloads & Responses**: Updated `generate_lock_otp` to send an empty JSON array (`[]`) matching the Android app when options are omitted, and safely handle array response structures (`{"raw": [...]}`).
 
 ### Changed
-- **Bulk Shadows Parameter**: Explicitly documented that `unit_uuid` is ignored on `get_all_shadows`, emitting a `DeprecationWarning` when passed.
 - **Experimental Lock Methods**: Labeled `QuboLock.revoke_guest_otp` / `QuboClient.revoke_lock_otp` as experimental / unverified (route is not present in the Android app; behavior on physical locks unknown). Labeled `validity_minutes` in `generate_lock_otp` as experimental (not sent by Android app).
 
 ### Fixed
 - **Bulk Shadows Route**: Restored `PATH_GET_ALL_SHADOWS` to `/unit-entity-management/api/v1/sp/{sp}/devices/shadow` (`GET_DEVICE_SHADOW` in APK; the `/units/{unit_uuid}` variant does not exist in the app).
 
 ### Documentation
-- **Unverified Claims Relabeled**: Clarified empirical observations in README regarding free MQTT telemetry, cloud DVR vs local MicroSD endpoints, and doorbell motion detection configuration (`vdbTriggerEventType`).
 - **Hardware Matrix**: Corrected matrix to distinguish RTSPS live stream Start (hardware verified) from Stop (route verified only), and documented lock testing scope.
 - **Lock Examples**: Moved lock OTP revocation out of the main gateway example into an explicit "Experimental" subsection with warnings.
 
