@@ -11,6 +11,7 @@ from qubopy.devices import (
     QuboAirPurifier,
     QuboCamera,
     QuboDashcam,
+    QuboDevice,
     QuboLight,
     QuboLock,
     QuboPlug,
@@ -315,6 +316,26 @@ async def test_camera_controls_and_streaming(sample_client):
         local_ip="192.168.0.50",
         local_port=49700,
         quality="high",
+        mobile_uuid=None,
+        src_device_id=None,
+    )
+
+    # Test P2P video call negotiation with explicit mobile_uuid and src_device_id
+    await cam.initiate_p2p_call(
+        local_ip="192.168.0.50",
+        local_port=49700,
+        quality="low",
+        mobile_uuid="MOB_PHONE_UUID",
+        src_device_id="SRC_HA_DEVICE",
+    )
+    sample_client.initiate_p2p_call.assert_called_with(
+        unit_uuid="u-01",
+        device_uuid="cam-01",
+        local_ip="192.168.0.50",
+        local_port=49700,
+        quality="low",
+        mobile_uuid="MOB_PHONE_UUID",
+        src_device_id="SRC_HA_DEVICE",
     )
 
     cam_no_client = QuboCamera(info, None, shadow)
@@ -956,12 +977,49 @@ def test_livestream_url_properties():
     assert url_empty.instance_id is None
 
 
+@pytest.mark.asyncio
+async def test_device_binding_validation(sample_client):
+    """Verify that send_command and update_attribute raise QuboCommandError if binding missing."""
+    info_no_unit = DeviceModelInfo(uuid="d1", deviceId="d1", name="Dev 1", entityUUID="e1")
+    dev1 = QuboDevice(info_no_unit, sample_client)
+    with pytest.raises(QuboCommandError, match="has no unit/entity binding"):
+        await dev1.send_command({"cmd": "test"})
+    with pytest.raises(QuboCommandError, match="has no unit/entity binding"):
+        await dev1.update_attribute({"attr": "test"})
+
+    info_no_entity = DeviceModelInfo(uuid="d2", deviceId="d2", name="Dev 2", unitUUID="u1")
+    dev2 = QuboDevice(info_no_entity, sample_client)
+    with pytest.raises(QuboCommandError, match="has no unit/entity binding"):
+        await dev2.send_command({"cmd": "test"})
+    with pytest.raises(QuboCommandError, match="has no unit/entity binding"):
+        await dev2.update_attribute({"attr": "test"})
+
+
+@pytest.mark.asyncio
+async def test_device_read_attribute_v2(sample_client):
+    """Verify read_attribute_v2 delegates to client.get_device_shadow_v2."""
+    info = DeviceModelInfo(uuid="d1", deviceId="d1", name="Dev 1", unitUUID="u1", entityUUID="e1")
+    dev = QuboDevice(info, sample_client)
+    sample_client.get_device_shadow_v2 = AsyncMock(
+        return_value={"attributeValue": "LOCKED", "timestamp": 1700000000000}
+    )
+    res = await dev.read_attribute_v2("lockControl", "lockState")
+    assert res["attributeValue"] == "LOCKED"
+    assert res["timestamp"] == 1700000000000
+    sample_client.get_device_shadow_v2.assert_called_once_with(
+        device_uuid="d1",
+        service_name="lockControl",
+        attribute_name="lockState",
+    )
+
+
 def test_all_modules_have_docstrings():
     """Verify that every module under qubopy defines a non-empty module docstring."""
     assert qubopy.__doc__, "qubopy package root is missing a docstring"
     for info in pkgutil.walk_packages(qubopy.__path__, prefix="qubopy."):
         mod = importlib.import_module(info.name)
         assert mod.__doc__, f"Module {info.name} is missing a docstring"
+
 
 
 

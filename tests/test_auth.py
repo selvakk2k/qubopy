@@ -529,6 +529,31 @@ async def test_refresh_session_success():
 
 
 @pytest.mark.asyncio
+async def test_refresh_session_omitted_refresh_token_clears_spent_token():
+    """Verify that a successful refresh returning no new refreshToken clears the spent token."""
+    auth = QuboAuth()
+    auth.set_tokens(
+        access_token="old-token",
+        refresh_token="old-refresh-token",
+        user_uuid="user-123",
+        expires_at=100.0,
+    )
+    refresh_payload = {
+        "accessToken": (
+            "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9."
+            "eyJleHAiOjIxMDAwMDAwMDAsInV1aWQiOiJ1c2VyLTEyMyJ9.sig"
+        ),
+    }
+    mock_resp = MockClientResponse(200, json.dumps(refresh_payload))
+    with patch("aiohttp.ClientSession.post", return_value=mock_resp):
+        tokens = await auth.refresh_session()
+        assert tokens.access_token == refresh_payload["accessToken"]
+        assert tokens.refresh_token is None
+
+    await auth.close()
+
+
+@pytest.mark.asyncio
 async def test_refresh_session_rejection_clears_tokens():
     """Verify refresh rejection (400/401) clears invalid tokens and raises QuboAuthError."""
     auth = QuboAuth()

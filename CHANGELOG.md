@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Device Attribute Reads (v2)**: Added `QuboDevice.read_attribute_v2(service, attribute)` for direct access to timestamped shadow readings without formatting raw client calls.
+- **P2P Identifier Overrides**: Added `mobile_uuid` and `src_device_id` parameters to `QuboClient.initiate_p2p_call` and `QuboCamera.initiate_p2p_call`.
+
+### Changed
+- **Strict Scope Validation**: Required `entity_uuid` in `QuboClient.send_command`, `update_shadow_attribute`, and `unlock_lock_via_gateway` (raising `ValueError` if missing), eliminating silent fallback to `device_uuid`. `QuboDevice.send_command` and `update_attribute` now raise `QuboCommandError` if either `unit_id` or `entity_id` is unbound.
+- **Spent Refresh Token Handling**: `QuboAuth.refresh_session` clears `refresh_token` to `None` when the cloud refresh response omits a new refresh token, preventing silent reuse of spent credentials.
+
 ## [0.1.6] - 2026-10-17
 
 ### Changed

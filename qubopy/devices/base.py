@@ -3,6 +3,7 @@
 import logging
 from typing import TYPE_CHECKING, Any
 
+from qubopy.exceptions import QuboCommandError
 from qubopy.models import DeviceModelInfo, DeviceShadow
 
 if TYPE_CHECKING:
@@ -125,6 +126,10 @@ class QuboDevice:
 
     async def send_command(self, command: dict[str, Any]) -> dict[str, Any]:
         """Dispatch a control command payload."""
+        if not self.unit_id or not self.entity_id:
+            raise QuboCommandError(
+                f"{self.name} has no unit/entity binding and cannot be commanded"
+            )
         return await self.client.send_command(
             unit_uuid=self.unit_id,
             entity_uuid=self.entity_id,
@@ -134,11 +139,27 @@ class QuboDevice:
 
     async def update_attribute(self, attributes: dict[str, Any]) -> dict[str, Any]:
         """Update shadow attributes directly."""
+        if not self.unit_id or not self.entity_id:
+            raise QuboCommandError(
+                f"{self.name} has no unit/entity binding and cannot be commanded"
+            )
         return await self.client.update_shadow_attribute(
             unit_uuid=self.unit_id,
             entity_uuid=self.entity_id,
             device_uuid=self.device_id,
             attributes=attributes,
+        )
+
+    async def read_attribute_v2(
+        self, service: str, attribute: str
+    ) -> dict[str, Any]:
+        """Read one attribute with its device-reported timestamp via the v2 shadow."""
+        if not self.client:
+            raise QuboCommandError("Device client not initialized")
+        return await self.client.get_device_shadow_v2(
+            device_uuid=self.device_id,
+            service_name=service,
+            attribute_name=attribute,
         )
 
     async def set_service_attribute(

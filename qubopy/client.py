@@ -695,6 +695,8 @@ class QuboClient:
         quality: str = "high",
         aes_key: bytes | None = None,
         aes_iv: bytes | None = None,
+        mobile_uuid: str | None = None,
+        src_device_id: str | None = None,
     ) -> dict[str, Any]:
         """Initiate a direct local P2P streaming session with a camera or doorbell (Experimental).
 
@@ -706,6 +708,10 @@ class QuboClient:
         iv = aes_iv or os.urandom(16)
         session_id = str(uuid.uuid4())
         quality_val = quality if quality in ("high", "low", "medium", "auto") else "high"
+        actual_mobile_uuid = mobile_uuid or (
+            self.auth.tokens.user_uuid if self.auth.tokens else ""
+        )
+        actual_src_device_id = src_device_id or self.auth.device_id
 
         offer = json.dumps([
             {
@@ -719,13 +725,13 @@ class QuboClient:
             "aesIV": iv.hex().upper(),
             "aesKey": key.hex().upper(),
             "mediaStreams": "both",
-            "mobileUUID": self.auth.tokens.user_uuid if self.auth.tokens else "",
+            "mobileUUID": actual_mobile_uuid,
             "offerData": offer,
             "protocols": "udp",
             "pttEnabled": "false",
             "sessionId": session_id,
             "sourceType": "live",
-            "srcDeviceId": self.auth.device_id,
+            "srcDeviceId": actual_src_device_id,
             "streamSourceQuality": quality_val,
         }
 
@@ -759,11 +765,12 @@ class QuboClient:
             raise ValueError("device_uuid must be provided to dispatch a command")
         if not unit_uuid:
             raise ValueError("unit_uuid must be provided to dispatch a command")
-        ent_uuid = entity_uuid or device_uuid
+        if not entity_uuid:
+            raise ValueError("entity_uuid must be provided to dispatch a command")
         path = PATH_SEND_COMMAND.format(
             sp=self.sp_id,
             unit_uuid=unit_uuid,
-            entity_uuid=ent_uuid,
+            entity_uuid=entity_uuid,
             device_uuid=device_uuid,
         )
         return await self.request("PUT", path, json_data=command)
@@ -779,11 +786,12 @@ class QuboClient:
             raise ValueError("gateway_uuid must be provided to unlock lock")
         if not unit_uuid:
             raise ValueError("unit_uuid must be provided to unlock lock")
-        ent_uuid = entity_uuid or gateway_uuid
+        if not entity_uuid:
+            raise ValueError("entity_uuid must be provided to unlock lock")
         path = PATH_SEND_COMMAND.format(
             sp=self.sp_id,
             unit_uuid=unit_uuid,
-            entity_uuid=ent_uuid,
+            entity_uuid=entity_uuid,
             device_uuid=gateway_uuid,
         )
         payload = {
@@ -824,11 +832,12 @@ class QuboClient:
             raise ValueError("device_uuid must be provided to update shadow attribute")
         if not unit_uuid:
             raise ValueError("unit_uuid must be provided to update shadow attribute")
-        ent_uuid = entity_uuid or device_uuid
+        if not entity_uuid:
+            raise ValueError("entity_uuid must be provided to update shadow attribute")
         path = PATH_UPDATE_SHADOW_ATTRIBUTE.format(
             sp=self.sp_id,
             unit_uuid=unit_uuid,
-            entity_uuid=ent_uuid,
+            entity_uuid=entity_uuid,
             device_uuid=device_uuid,
         )
         return await self.request("PUT", path, json_data=attributes)

@@ -234,6 +234,8 @@ class QuboCamera(QuboDevice):
         local_ip: str,
         local_port: int = 49700,
         quality: str = "high",
+        mobile_uuid: str | None = None,
+        src_device_id: str | None = None,
     ) -> dict[str, Any]:
         """Initiate a direct local P2P streaming session over UDP (Experimental).
 
@@ -248,4 +250,6 @@ class QuboCamera(QuboDevice):
             local_ip=local_ip,
             local_port=local_port,
             quality=quality,
+            mobile_uuid=mobile_uuid,
+            src_device_id=src_device_id,
         )

@@ -110,6 +110,15 @@ async def test_send_command(sample_client):
         assert res_raw["status"] == "SUCCESS"
         assert mock_req.call_args[0][0] == "PUT"
 
+    with pytest.raises(ValueError, match="unit_uuid must be provided"):
+        await sample_client.send_command("", "e1", "d1", {"state": "ON"})
+
+    with pytest.raises(ValueError, match="entity_uuid must be provided"):
+        await sample_client.send_command("u1", "", "d1", {"state": "ON"})
+
+    with pytest.raises(ValueError, match="device_uuid must be provided"):
+        await sample_client.send_command("u1", "e1", "", {"state": "ON"})
+
     await sample_client.close()
 
 
@@ -126,6 +135,9 @@ async def test_update_shadow_attribute(sample_client):
 
     with pytest.raises(ValueError, match="unit_uuid must be provided"):
         await sample_client.update_shadow_attribute("", "e1", "d1", {"brightness": 80})
+
+    with pytest.raises(ValueError, match="entity_uuid must be provided"):
+        await sample_client.update_shadow_attribute("u1", "", "d1", {"brightness": 80})
 
     with pytest.raises(ValueError, match="device_uuid must be provided"):
         await sample_client.update_shadow_attribute("u1", "e1", "", {"brightness": 80})
@@ -578,6 +590,23 @@ async def test_client_initiate_p2p_call(sample_client):
         assert payload["aesIV"] == res["aes_iv_hex"]
         assert "192.168.1.50:49700" in payload["offerData"]
         assert payload["protocols"] == "udp"
+        assert payload["mobileUUID"] == (
+            sample_client.auth.tokens.user_uuid if sample_client.auth.tokens else ""
+        )
+        assert payload["srcDeviceId"] == sample_client.auth.device_id
+
+    # Test explicit mobile_uuid and src_device_id overrides
+    with patch("aiohttp.ClientSession.request", return_value=mock_resp) as mock_req:
+        await sample_client.initiate_p2p_call(
+            unit_uuid="unit-1",
+            device_uuid="cam-1",
+            local_ip="192.168.1.50",
+            mobile_uuid="PHONE_OVERRIDE_UUID",
+            src_device_id="SRC_DEVICE_OVERRIDE",
+        )
+        payload = mock_req.call_args[1]["json"]
+        assert payload["mobileUUID"] == "PHONE_OVERRIDE_UUID"
+        assert payload["srcDeviceId"] == "SRC_DEVICE_OVERRIDE"
 
     await sample_client.close()
 

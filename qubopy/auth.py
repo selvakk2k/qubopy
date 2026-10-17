@@ -465,11 +465,12 @@ class QuboAuth:
             if not new_access_token:
                 raise QuboAuthError("Refresh response missing access token")
 
-            new_refresh_token = (
-                data.get("refreshToken")
-                or data.get("refresh_token")
-                or (self._tokens.refresh_token if self._tokens else None)
-            )
+            new_refresh_token = data.get("refreshToken") or data.get("refresh_token")
+            if not new_refresh_token and self._tokens and self._tokens.refresh_token:
+                _LOGGER.debug(
+                    "Refresh response omitted a new refresh token; "
+                    "clearing refresh token to prevent reuse of spent credentials"
+                )
             expires_at = _decode_jwt_expiry(new_access_token) or (time.time() + 86400)
 
             mqtt_password = (
