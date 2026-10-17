@@ -216,3 +216,26 @@ async def test_rejected_credentials_stop_listener(broker: Broker) -> None:
         assert len(fired) == 1  # no retry storm afterwards
     finally:
         await listener.stop()
+
+
+@pytest.mark.asyncio
+async def test_wait_subscribed_timing(broker: Broker) -> None:
+    """Verify wait_subscribed wakes event loop immediately upon SUBACK (<1.0s)."""
+    auth = StubAuth()
+    auth.set_tokens(access_token="tok1", user_uuid="user1")
+    listener = QuboMqttListener(
+        auth,
+        unit_uuid="unit1",
+        broker_host="127.0.0.1",
+        broker_port=broker.port,
+    )
+    await listener.start()
+    try:
+        start_time = time.monotonic()
+        subscribed = await listener.wait_subscribed(timeout=5.0)
+        elapsed = time.monotonic() - start_time
+        assert subscribed is True
+        assert elapsed < 1.0, f"wait_subscribed took {elapsed:.2f}s, expected < 1.0s"
+    finally:
+        await listener.stop()
+

@@ -334,7 +334,10 @@ class QuboMqttListener:
                 )
                 self._subscribed_mids.clear()
                 self._subscribed = False
-                self._subscribed_event.clear()
+                if loop.is_running():
+                    loop.call_soon_threadsafe(self._subscribed_event.clear)
+                else:
+                    self._subscribed_event.clear()
                 for u in self._unit_uuids:
                     client.subscribe(f"/monitor/{u}/#", qos=0)
 
@@ -342,7 +345,10 @@ class QuboMqttListener:
                     loop.call_soon_threadsafe(self._connect_future.set_result, True)
             else:
                 _LOGGER.error("Qubo MQTT connection rejected by broker: rc=%s", rc)
-                self._subscribed_event.clear()
+                if loop.is_running():
+                    loop.call_soon_threadsafe(self._subscribed_event.clear)
+                else:
+                    self._subscribed_event.clear()
                 if self._connect_future and not self._connect_future.done():
                     if code in (4, 5, 134, 135):
                         err: Exception = QuboAuthError(
@@ -382,12 +388,18 @@ class QuboMqttListener:
             if has_failure:
                 self._subscribed_mids.clear()
                 self._subscribed = False
-                self._subscribed_event.clear()
+                if loop.is_running():
+                    loop.call_soon_threadsafe(self._subscribed_event.clear)
+                else:
+                    self._subscribed_event.clear()
             else:
                 self._subscribed_mids.add(mid)
                 self._subscribed = len(self._subscribed_mids) >= len(self._unit_uuids)
                 if self._subscribed:
-                    self._subscribed_event.set()
+                    if loop.is_running():
+                        loop.call_soon_threadsafe(self._subscribed_event.set)
+                    else:
+                        self._subscribed_event.set()
 
         def on_message(client: Any, userdata: Any, msg: Any) -> None:
             self._handle_raw_message(msg.topic, msg.payload)
@@ -401,8 +413,11 @@ class QuboMqttListener:
         ) -> None:
             _LOGGER.debug("Disconnected from Qubo MQTT broker: rc=%s", rc)
             self._subscribed = False
-            self._subscribed_event.clear()
             self._subscribed_mids.clear()
+            if loop.is_running():
+                loop.call_soon_threadsafe(self._subscribed_event.clear)
+            else:
+                self._subscribed_event.clear()
             if not self._stopping and self._is_running and loop.is_running():
                 loop.call_soon_threadsafe(self._start_reconnect_task)
 
