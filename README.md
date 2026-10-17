@@ -55,10 +55,10 @@ The Qubo smart home ecosystem consists of two distinct communication models:
 | Series | Category | Example Models | Functions & Sensors | Integration Mode | Status |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **Auth** | Cloud Session | N/A | Email + Password, Phone SMS OTP | Cloud REST (`/user/login?system=CS`, `/phone/verify`) | `✅ Hardware Verified` |
-| `HCP` / `HCO` | Cameras | `HCP01`–`HCP19`, `HCO04`–`HCO07` | RTSP Stream Query, Privacy Mask, Siren, Motion Status | Cloud REST + Local RTSP / P2P | `✅ Hardware Verified` |
+| `HCP` / `HCO` | Cameras | `HCP01`–`HCP19`, `HCO04`–`HCO07` | Cloud RTSPS Live Stream (Start/Stop), Privacy Mask, Siren, Motion Status, Storage Diagnostics | Cloud REST + Local RTSP / P2P | `✅ Hardware Verified` |
 | `HCD` | Doorbells | `HCD01`, `HCD04` | Ring Event, Chime, RTSP Stream / LAN P2P | Cloud REST + Local RTSP / P2P | `✅ Hardware Verified` |
 | `HCA` | Dashcams | `HCA08B`, Smart Dashcam Pro | In-Car Wi-Fi AP Credentials, Parking Mode, Speed Warning | Cloud REST | `✅ Hardware Verified` |
-| `HLM` / `HLW` | Door Locks | `HLM01`–`HLM10`, `HLR01`, `HLW01` | Remote Unlock, Battery Level, Offline BLE Key Export | Cloud Gateway / Local BLE | Gateway: `✅ Hardware Verified`<br>BLE: `⚠️ Experimental` |
+| `HLM` / `HLW` | Door Locks | `HLM01`–`HLM10`, `HLR01`, `HLW01` | Remote Unlock, Live State/Battery Query, Guest OTP PIN, Offline BLE Key Export | Cloud Gateway / Local BLE | Gateway: `✅ Hardware Verified`<br>BLE: `⚠️ Experimental` |
 | `HSP` | Smart Plugs | `HSP01` (16A), `HSP02` (10A), `HSP10` | Switch, Voltage, Current, Active Power (W), Energy (kWh) | Cloud REST | `⚠️ API Modeled` |
 | `HPH` | Air Purifiers | `HPH01`–`HPH08` (Q200 to Q1000) | Fan Speed, Auto/Sleep Presets, PM2.5, Filter Life, Child Lock | Cloud REST | `⚠️ API Modeled` |
 | `HLB` | Smart Lighting | `HLB01`, `HLB10` | State, Brightness, RGB Color, White Temperature | Cloud REST | `⚠️ API Modeled` |
@@ -899,6 +899,12 @@ Lint with `ruff`:
 
 ```bash
 ruff check .
+```
+
+Type check with `mypy`:
+
+```bash
+mypy qubopy
 ```
 
 ---
