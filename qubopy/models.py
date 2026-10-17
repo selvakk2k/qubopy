@@ -132,8 +132,39 @@ class RtspStreamInfo(BaseModel):
     auth_required: bool = False
     username: str | None = None
     password: str | None = Field(default=None, repr=False)
+    app_session_id: str | None = Field(
+        default=None, validation_alias=AliasChoices("app_session_id", "appSessionId")
+    )
+    instance_id: str | None = Field(
+        default=None, validation_alias=AliasChoices("instance_id", "instanceId")
+    )
 
     @property
     def rtsp_url(self) -> str | None:
         """Alias for stream_url."""
         return self.stream_url
+
+
+class LiveStreamUrl(str):
+    """Live RTSPS stream URL string with attached session metadata for teardown."""
+
+    app_session_id: str | None
+    instance_id: str | None
+
+    def __new__(
+        cls,
+        url: str,
+        app_session_id: str | None = None,
+        instance_id: str | None = None,
+    ) -> "LiveStreamUrl":
+        obj = super().__new__(cls, url)
+        obj.app_session_id = app_session_id
+        obj.instance_id = instance_id
+        return obj
+
+    def __repr__(self) -> str:
+        return (
+            f"LiveStreamUrl({super().__repr__()}, "
+            f"app_session_id={self.app_session_id!r}, "
+            f"instance_id={self.instance_id!r})"
+        )

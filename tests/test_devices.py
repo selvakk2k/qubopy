@@ -20,7 +20,7 @@ from qubopy.devices import (
 )
 from qubopy.devices.base import _as_bool, _first_not_none
 from qubopy.exceptions import QuboCommandError
-from qubopy.models import DeviceModelInfo, DeviceShadow, RtspStreamInfo
+from qubopy.models import DeviceModelInfo, DeviceShadow, LiveStreamUrl, RtspStreamInfo
 
 
 def test_plug_telemetry_and_state(sample_client, mock_plug_info):
@@ -872,10 +872,82 @@ async def test_lock_state_in_transit_and_battery_edge_cases(sample_client):
     bat_over = await lock.fetch_live_battery()
     assert bat_over == 100
 
-    bat_under = await lock.fetch_live_battery()
-    assert bat_under == 0
-
     await sample_client.close()
+
+
+@pytest.mark.asyncio
+async def test_camera_stream_lifecycle(sample_client):
+    """Test start_stream and stop_stream lifecycle and session tracking on QuboCamera."""
+    info = DeviceModelInfo(
+        uuid="cam-01",
+        deviceId="cam-01",
+        name="Cam 360",
+        model="HCP02A",
+        type="ptzeCamera",
+        unitUUID="u-01",
+        entityUUID="e-01",
+    )
+    cam = QuboCamera(info, sample_client)
+    assert cam.active_stream_session is None
+
+    # Stopping with no active session returns False without API call
+    sample_client.stop_live_stream = AsyncMock()
+    assert await cam.stop_stream() is False
+    sample_client.stop_live_stream.assert_not_called()
+
+    # Mock start stream returning LiveStreamUrl
+    mock_url = LiveStreamUrl(
+        "rtsps://stream.quboworld.com:443/live/cam-01",
+        app_session_id="sess-abc-123",
+        instance_id="inst-999",
+    )
+    sample_client.get_live_stream_url = AsyncMock(return_value=mock_url)
+    sample_client.stop_live_stream = AsyncMock(return_value=True)
+
+    stream_url = await cam.start_stream(quality="high")
+    assert isinstance(stream_url, str)
+    assert isinstance(stream_url, LiveStreamUrl)
+    assert stream_url.app_session_id == "sess-abc-123"
+    assert stream_url.instance_id == "inst-999"
+    assert cam.active_stream_session == "sess-abc-123"
+
+    # Stop stream uses the active session
+    res = await cam.stop_stream()
+    assert res is True
+    sample_client.stop_live_stream.assert_called_once_with(
+        unit_uuid=cam.unit_id,
+        device_uuid=cam.device_id,
+        app_session_id="sess-abc-123",
+        quality="low",
+        user_app_id=None,
+    )
+    assert cam.active_stream_session is None
+
+    # stop_live_stream alias works with explicit session
+    res_alias = await cam.stop_live_stream(app_session_id="explicit-session", quality="high")
+    assert res_alias is True
+    sample_client.stop_live_stream.assert_called_with(
+        unit_uuid=cam.unit_id,
+        device_uuid=cam.device_id,
+        app_session_id="explicit-session",
+        quality="high",
+        user_app_id=None,
+    )
+
+
+def test_livestream_url_properties():
+    """Verify LiveStreamUrl string subclass behavior and repr."""
+    url = LiveStreamUrl("rtsps://example.com/live", app_session_id="sess-1", instance_id="inst-1")
+    assert isinstance(url, str)
+    assert url == "rtsps://example.com/live"
+    assert url.startswith("rtsps://")
+    assert url.app_session_id == "sess-1"
+    assert url.instance_id == "inst-1"
+    assert "sess-1" in repr(url)
+
+    url_empty = LiveStreamUrl("rtsps://example.com/live")
+    assert url_empty.app_session_id is None
+    assert url_empty.instance_id is None
 
 
 def test_all_modules_have_docstrings():

@@ -145,10 +145,10 @@ class QuboAuth:
                 expires_at = time.time() + 86400
 
         self._tokens = TokenPayload(
-            accessToken=access_token,
-            refreshToken=refresh_token,
-            uuid=user_uuid,
-            mqttPassword=mqtt_password,
+            access_token=access_token,
+            refresh_token=refresh_token,
+            user_uuid=user_uuid,
+            mqtt_password=mqtt_password,
             expires_at=expires_at,
         )
         return self._tokens
@@ -215,10 +215,10 @@ class QuboAuth:
 
         mqtt_password = data.get("mqttPassword")
         self._tokens = TokenPayload(
-            accessToken=access_token,
-            refreshToken=refresh_token,
-            uuid=str(user_uuid),
-            mqttPassword=mqtt_password,
+            access_token=access_token,
+            refresh_token=refresh_token,
+            user_uuid=str(user_uuid),
+            mqtt_password=mqtt_password,
             expires_at=expires_at,
         )
         return self._tokens
@@ -361,10 +361,10 @@ class QuboAuth:
 
         mqtt_password = selected_profile.get("mqttPassword")
         self._tokens = TokenPayload(
-            accessToken=access_token,
-            refreshToken=refresh_token,
-            uuid=str(user_uuid),
-            mqttPassword=mqtt_password,
+            access_token=access_token,
+            refresh_token=refresh_token,
+            user_uuid=str(user_uuid),
+            mqtt_password=mqtt_password,
             expires_at=expires_at,
         )
         return self._tokens
@@ -461,10 +461,10 @@ class QuboAuth:
 
             mqtt_password = data.get("mqttPassword") or self._tokens.mqtt_password
             self._tokens = TokenPayload(
-                accessToken=new_access_token,
-                refreshToken=new_refresh_token,
-                uuid=self._tokens.user_uuid,
-                mqttPassword=mqtt_password,
+                access_token=new_access_token,
+                refresh_token=new_refresh_token,
+                user_uuid=self._tokens.user_uuid,
+                mqtt_password=mqtt_password,
                 expires_at=expires_at,
             )
             return self._tokens

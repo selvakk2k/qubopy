@@ -4,7 +4,7 @@ from typing import Any
 
 from qubopy.devices.base import QuboDevice, _as_bool, _first_not_none
 from qubopy.exceptions import QuboCommandError
-from qubopy.models import RtspStreamInfo
+from qubopy.models import LiveStreamUrl, RtspStreamInfo
 
 
 class QuboCamera(QuboDevice):
@@ -103,14 +103,50 @@ class QuboCamera(QuboDevice):
                 pass
         return None
 
-    async def start_stream(self, quality: str = "high") -> str:
+    @property
+    def active_stream_session(self) -> str | None:
+        """Return the active cloud stream session identifier, if any."""
+        return getattr(self, "_active_stream_session", None)
+
+    async def start_stream(
+        self, quality: str = "high", user_app_id: str | None = None
+    ) -> LiveStreamUrl:
         """Mint and return a live single-consumer Wowza RTSPS video stream URL."""
-        return await self.client.get_live_stream_url(
+        url = await self.client.get_live_stream_url(
             unit_uuid=self.unit_id,
             device_uuid=self.device_id,
             device_type=self.info.device_type,
             quality=quality,
+            user_app_id=user_app_id,
         )
+        self._active_stream_session = getattr(url, "app_session_id", None)
+        return url
+
+    async def stop_stream(
+        self,
+        app_session_id: str | None = None,
+        quality: str = "low",
+        user_app_id: str | None = None,
+    ) -> bool:
+        """Tear down an active live RTSPS stream session on Qubo Cloud.
+
+        If app_session_id is omitted, tears down the session minted by start_stream().
+        """
+        session_id = app_session_id or getattr(self, "_active_stream_session", None)
+        if not session_id:
+            return False
+        res = await self.client.stop_live_stream(
+            unit_uuid=self.unit_id,
+            device_uuid=self.device_id,
+            app_session_id=session_id,
+            quality=quality,
+            user_app_id=user_app_id,
+        )
+        if session_id == getattr(self, "_active_stream_session", None):
+            self._active_stream_session = None
+        return res
+
+    stop_live_stream = stop_stream
 
     async def get_rtsp_info(self) -> RtspStreamInfo:
         """Query camera RTSP streaming support and endpoint details."""

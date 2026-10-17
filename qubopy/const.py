@@ -61,6 +61,9 @@ PATH_P2P_CALL: str = (
 PATH_START_STREAM: str = (
     "/stream-manager/api/v1/sp/{sp}/stream/unit/{unit_uuid}/device/{device_uuid}"
 )
+PATH_STOP_STREAM: str = (
+    "/stream-manager/api/v2/sp/{sp}/stream/unit/{unit_uuid}/device/{device_uuid}"
+)
 PATH_DEVICE_EVENTS: str = (
     "/content-manager/api/{v}/sp/{sp}/units/{unit_uuid}/devices/{device_uuid}/events"
 )

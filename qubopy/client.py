@@ -31,6 +31,7 @@ from qubopy.const import (
     PATH_RTSP_SUPPORT,
     PATH_SEND_COMMAND,
     PATH_START_STREAM,
+    PATH_STOP_STREAM,
     PATH_UNIT_DEVICES,
     PATH_UNITS,
     PATH_UPDATE_SHADOW_ATTRIBUTE,
@@ -44,6 +45,7 @@ from qubopy.exceptions import (
 from qubopy.models import (
     DeviceModelInfo,
     DeviceShadow,
+    LiveStreamUrl,
     RtspStreamInfo,
     extract_unit_uuid,
 )
@@ -573,8 +575,11 @@ class QuboClient:
         device_type: str = "ptzeCamera",
         quality: str = "high",
         user_app_id: str | None = None,
-    ) -> str:
-        """Mint a live single-consumer Wowza RTSPS stream URL from Qubo Cloud."""
+    ) -> LiveStreamUrl:
+        """Mint a live single-consumer Wowza RTSPS stream URL from Qubo Cloud.
+
+        Returns a LiveStreamUrl (str subclass) carrying app_session_id and instance_id.
+        """
         app_id = user_app_id or self.auth.device_id
         path = PATH_START_STREAM.format(
             sp=self.sp_id, unit_uuid=unit_uuid, device_uuid=device_uuid
@@ -589,7 +594,41 @@ class QuboClient:
             "POST", path, json_data={"userAppID": app_id}, params=params
         )
         stream_url = resp.get("streamURL") or ""
-        return str(stream_url)
+        return LiveStreamUrl(
+            str(stream_url),
+            app_session_id=resp.get("appSessionId"),
+            instance_id=resp.get("instanceId"),
+        )
+
+    async def stop_live_stream(
+        self,
+        unit_uuid: str,
+        device_uuid: str,
+        app_session_id: str,
+        quality: str = "low",
+        user_app_id: str | None = None,
+    ) -> bool:
+        """Tear down a live RTSPS stream session on Qubo Cloud.
+
+        Dispatches DELETE /stream-manager/api/v2/sp/{sp}/stream/unit/{unit}/device/{device}.
+        Note: Stream teardown is best-effort; the cloud automatically cleans up the session
+        when the RTSP client socket closes.
+        """
+        app_id = user_app_id or self.auth.device_id
+        path = PATH_STOP_STREAM.format(
+            sp=self.sp_id, unit_uuid=unit_uuid, device_uuid=device_uuid
+        )
+        params = {
+            "appSessionId": app_session_id,
+            "type": quality,
+            "userAppID": app_id,
+        }
+        try:
+            await self.request("DELETE", path, params=params)
+            return True
+        except Exception as err:
+            _LOGGER.debug("Stream teardown failed (best-effort) for %s: %s", device_uuid, err)
+            return False
 
     async def initiate_p2p_call(
         self,
@@ -789,14 +828,14 @@ class QuboClient:
 
                 dev_info = DeviceModelInfo(
                     uuid=dev_uuid,
-                    deviceId=dev_uuid,
+                    device_id=dev_uuid,
                     name=dev_name,
                     model=dev_model,
-                    type=dev_type,
-                    unitUUID=unit_uuid or d.get("unitUUID", ""),
-                    entityUUID=d.get("entityUUID", d.get("entityId", "")),
-                    isOnline=bool(d.get("isOnline", d.get("online", True))),
-                    extraData=extra,
+                    device_type=dev_type,
+                    unit_uuid=str(unit_uuid or d.get("unitUUID") or ""),
+                    entity_uuid=str(d.get("entityUUID") or d.get("entityId") or ""),
+                    is_online=bool(d.get("isOnline", d.get("online", True))),
+                    extra_data=extra,
                 )
                 devices.append(create_device(dev_info, self, shadow_obj))
 

@@ -11,6 +11,7 @@ from qubopy.auth import QuboAuth
 from qubopy.client import QuboClient
 from qubopy.devices import QuboLock, QuboPlug
 from qubopy.exceptions import QuboAuthError, QuboCommandError
+from qubopy.models import LiveStreamUrl
 from tests.conftest import MockClientResponse
 
 
@@ -542,6 +543,72 @@ async def test_client_get_ooi_and_lock_events(sample_client):
         assert "/control-monitor/api/v1/sp/" in mock_req.call_args[0][1]
         assert "/device/lock-1/event" in mock_req.call_args[0][1]
         assert mock_req.call_args[1]["params"] is None
+
+    await sample_client.close()
+
+
+@pytest.mark.asyncio
+async def test_client_live_stream_start_and_stop(sample_client):
+    """Verify get_live_stream_url mints LiveStreamUrl and stop_live_stream sends DELETE."""
+    mock_start_resp = MockClientResponse(
+        200,
+        json.dumps({
+            "streamURL": "rtsps://wowza.quboworld.com:443/live/cam-1",
+            "appSessionId": "sess-live-987",
+            "instanceId": "inst-555",
+        }),
+    )
+    with patch("aiohttp.ClientSession.request", return_value=mock_start_resp) as mock_req:
+        url = await sample_client.get_live_stream_url(
+            unit_uuid="u-1",
+            device_uuid="cam-1",
+            device_type="ptzeCamera",
+            quality="high",
+            user_app_id="app-1",
+        )
+        assert isinstance(url, str)
+        assert isinstance(url, LiveStreamUrl)
+        assert url == "rtsps://wowza.quboworld.com:443/live/cam-1"
+        assert url.app_session_id == "sess-live-987"
+        assert url.instance_id == "inst-555"
+
+        method, req_url = mock_req.call_args[0][:2]
+        assert method == "POST"
+        assert "/stream-manager/api/v1/sp/" in req_url
+        assert "/stream/unit/u-1/device/cam-1" in req_url
+        assert mock_req.call_args[1]["json"] == {"userAppID": "app-1"}
+        assert mock_req.call_args[1]["params"]["type"] == "high"
+
+    # Test successful stream teardown (DELETE v2)
+    mock_stop_resp = MockClientResponse(200, json.dumps({"status": "SUCCESS"}))
+    with patch("aiohttp.ClientSession.request", return_value=mock_stop_resp) as mock_req:
+        res = await sample_client.stop_live_stream(
+            unit_uuid="u-1",
+            device_uuid="cam-1",
+            app_session_id="sess-live-987",
+            quality="low",
+            user_app_id="app-1",
+        )
+        assert res is True
+        method, req_url = mock_req.call_args[0][:2]
+        assert method == "DELETE"
+        assert "/stream-manager/api/v2/sp/" in req_url
+        assert "/stream/unit/u-1/device/cam-1" in req_url
+        assert mock_req.call_args[1]["params"] == {
+            "appSessionId": "sess-live-987",
+            "type": "low",
+            "userAppID": "app-1",
+        }
+
+    # Test teardown failure is caught gracefully (best-effort)
+    mock_fail_resp = MockClientResponse(500, "Server Error")
+    with patch("aiohttp.ClientSession.request", return_value=mock_fail_resp):
+        res_fail = await sample_client.stop_live_stream(
+            unit_uuid="u-1",
+            device_uuid="cam-1",
+            app_session_id="sess-live-987",
+        )
+        assert res_fail is False
 
     await sample_client.close()
 

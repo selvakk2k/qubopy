@@ -31,6 +31,10 @@ jobs:
         run: |
           ruff check .
 
+      - name: Type check with mypy
+        run: |
+          mypy qubopy
+
       - name: Install Mosquitto (live broker tests)
         run: sudo apt-get update && sudo apt-get install -y mosquitto mosquitto-clients
 
