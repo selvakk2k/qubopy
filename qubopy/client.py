@@ -437,10 +437,36 @@ class QuboClient:
             return resp.get("events") or resp.get("data") or [resp]
         return []
 
-    async def generate_lock_otp(self, device_uuid: str) -> dict[str, Any]:
-        """Generate a temporary one-time keypad guest PIN for a smart lock."""
+    async def generate_lock_otp(
+        self,
+        device_uuid: str,
+        validity_minutes: int | None = None,
+    ) -> dict[str, Any]:
+        """Generate a temporary one-time keypad guest PIN for a smart lock.
+
+        Args:
+            device_uuid: Target lock device UUID.
+            validity_minutes: Optional expiration window in minutes.
+        """
         path = PATH_LOCK_OTP.format(sp=self.sp_id, device_uuid=device_uuid)
-        resp = await self.request("POST", path)
+        payload = {"validity": validity_minutes} if validity_minutes is not None else None
+        resp = await self.request("POST", path, json_data=payload)
+        return resp if isinstance(resp, dict) else {"raw": resp}
+
+    async def revoke_lock_otp(
+        self,
+        device_uuid: str,
+        otp: str | None = None,
+    ) -> dict[str, Any]:
+        """Revoke a temporary guest OTP PIN for a smart lock.
+
+        Args:
+            device_uuid: Target lock device UUID.
+            otp: Optional specific OTP string to invalidate.
+        """
+        path = PATH_LOCK_OTP.format(sp=self.sp_id, device_uuid=device_uuid)
+        payload = {"otp": otp} if otp is not None else None
+        resp = await self.request("DELETE", path, json_data=payload)
         return resp if isinstance(resp, dict) else {"raw": resp}
 
     async def get_plug_energy_history(

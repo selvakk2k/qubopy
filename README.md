@@ -337,7 +337,25 @@ async def operate_camera(camera: QuboCamera):
     print(f"Free Storage  : {camera.sd_storage_free_mb} MB / {camera.sd_storage_total_mb} MB")
 ```
 
-#### B. Video Streaming Pathways
+#### B. Storage Architecture & Motion Event Prerequisites
+
+Understanding the separation between real-time telemetry, local MicroSD card recording, and cloud storage:
+
+* **Real-Time Motion vs Ephemeral MQTT**:
+  * Real-time motion and person detection events are **ephemeral wire packets** pushed to `/monitor/{unit_uuid}/{device_uuid}/#` on `ooiService` or `motionDetection`.
+  * Real-time MQTT telemetry is completely **free** and does not require an active cloud subscription.
+  * Motion status is not retained in the cloud REST device shadow; clients must subscribe via `QuboMqttListener` to capture motion triggers in real time.
+
+* **Video Doorbell Motion Configuration (`vdbTriggerEventType`)**:
+  * Qubo Video Doorbells (`HCD` series) default in firmware to `"vdbTriggerEventType": "doorbellPressed"` to maximize battery life and minimize nuisance rings.
+  * When set to `doorbellPressed`, the doorbell firmware **only fires events on physical chime button presses**, suppressing PIR motion packets.
+  * To receive motion/person detection events from a Video Doorbell over MQTT, users must open the official Qubo mobile app (**Doorbell Settings -> Detection Settings**) and enable **Person Detection** or **Motion Detection**.
+
+* **MicroSD Card Storage vs Cloud DVR Endpoints**:
+  * `camera.get_events()`, `get_device_events()`, and `get_ooi_events()` query the **Cloud DVR (AWS S3)** storage service. Without an active paid cloud recording subscription, these REST endpoints return 0 events.
+  * Cameras and doorbells with a MicroSD card installed record high-definition event clips locally. SD card capacity and status can be inspected using `camera.get_storage_info()`. Playback of SD card video in the mobile application is streamed directly from the camera via local P2P/RTSP rather than through the cloud REST API.
+
+#### C. Video Streaming Pathways
 
 ##### 1. Cloud Wowza RTSPS Streaming (`camera.start_stream()`)
 
@@ -396,7 +414,7 @@ if stream_info.is_supported:
     print(f"Username          : {stream_info.username}")
 ```
 
-#### C. Downstream go2rtc Configuration
+#### D. Downstream go2rtc Configuration
 
 `go2rtc` can consume Qubo camera feeds for rebroadcasting into Home Assistant, WebRTC, and RTSP restreaming:
 
@@ -469,9 +487,12 @@ async def unlock_door(lock: QuboLock):
     print(f"State Timestamp : {lock.last_lock_state_timestamp} ms")
     print(f"Live Battery    : {live_battery}% (cached: {lock.battery_percent}%)")
 
-    # Generate temporary guest OTP PIN
-    otp = await lock.generate_guest_otp()
-    print(f"Guest PIN OTP   : {otp.get('otp')}")
+    # Generate temporary guest OTP PIN (with optional expiration in minutes)
+    otp = await lock.generate_guest_otp(validity_minutes=30)
+    print(f"Guest PIN OTP   : {otp.get('otp')} (valid till: {otp.get('validTill')})")
+
+    # Revoke an active guest OTP PIN
+    await lock.revoke_guest_otp(otp.get("otp"))
 ```
 
 #### Method B: Local BLE Key Export & ESPHome Configuration (`⚠️ Experimental`)

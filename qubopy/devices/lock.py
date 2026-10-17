@@ -227,8 +227,26 @@ class QuboLock(QuboDevice):
             return pct
         return None
 
-    async def generate_guest_otp(self) -> dict[str, Any]:
-        """Generate a temporary one-time keypad PIN code for guest access."""
+    async def generate_guest_otp(
+        self, validity_minutes: int | None = None
+    ) -> dict[str, Any]:
+        """Generate a temporary one-time keypad PIN code for guest access.
+
+        Args:
+            validity_minutes: Optional expiration window in minutes.
+        """
         if not self.client:
             raise QuboCommandError("Device client not initialized")
-        return await self.client.generate_lock_otp(self.device_id)
+        return await self.client.generate_lock_otp(
+            self.device_id, validity_minutes=validity_minutes
+        )
+
+    async def revoke_guest_otp(self, otp: str | None = None) -> dict[str, Any]:
+        """Revoke an active temporary guest OTP PIN.
+
+        Args:
+            otp: Optional specific OTP string to invalidate.
+        """
+        if not self.client:
+            raise QuboCommandError("Device client not initialized")
+        return await self.client.revoke_lock_otp(self.device_id, otp=otp)

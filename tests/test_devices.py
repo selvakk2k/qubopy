@@ -658,6 +658,7 @@ async def test_lock_live_fetch_and_otp_methods(sample_client):
         ]
     )
     sample_client.generate_lock_otp = AsyncMock(return_value={"otp": "123456"})
+    sample_client.revoke_lock_otp = AsyncMock(return_value={"status": "SUCCESS"})
 
     st = await lock.fetch_live_lock_state()
     assert st == "unlocked"
@@ -671,9 +672,13 @@ async def test_lock_live_fetch_and_otp_methods(sample_client):
     assert bat == 88
     assert lock.battery_percent == 88
 
-    otp_resp = await lock.generate_guest_otp()
+    otp_resp = await lock.generate_guest_otp(validity_minutes=20)
     assert otp_resp == {"otp": "123456"}
-    sample_client.generate_lock_otp.assert_called_with("lock-live")
+    sample_client.generate_lock_otp.assert_called_with("lock-live", validity_minutes=20)
+
+    rev_resp = await lock.revoke_guest_otp("123456")
+    assert rev_resp == {"status": "SUCCESS"}
+    sample_client.revoke_lock_otp.assert_called_with("lock-live", otp="123456")
 
     await sample_client.close()
 

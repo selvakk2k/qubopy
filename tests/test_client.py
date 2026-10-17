@@ -447,14 +447,29 @@ async def test_client_get_device_events(sample_client):
 
 @pytest.mark.asyncio
 async def test_client_generate_lock_otp(sample_client):
-    """Verify generate_lock_otp calls roi-manager POST endpoint."""
+    """Verify generate_lock_otp calls roi-manager POST endpoint with optional validity."""
     mock_resp = MockClientResponse(200, json.dumps({"otp": "987654", "validTill": 1728000}))
     with patch("aiohttp.ClientSession.request", return_value=mock_resp) as mock_req:
-        res = await sample_client.generate_lock_otp("lock-123")
+        res = await sample_client.generate_lock_otp("lock-123", validity_minutes=30)
         assert res["otp"] == "987654"
         assert mock_req.call_args[0][0] == "POST"
         assert "/roi-manager/api/v1/sp/" in mock_req.call_args[0][1]
         assert "/device/lock-123/lock/pin/otp" in mock_req.call_args[0][1]
+        assert mock_req.call_args[1]["json"] == {"validity": 30}
+
+    await sample_client.close()
+
+
+@pytest.mark.asyncio
+async def test_client_revoke_lock_otp(sample_client):
+    """Verify revoke_lock_otp calls roi-manager DELETE endpoint."""
+    mock_resp = MockClientResponse(200, json.dumps({"status": "SUCCESS"}))
+    with patch("aiohttp.ClientSession.request", return_value=mock_resp) as mock_req:
+        res = await sample_client.revoke_lock_otp("lock-123", otp="987654")
+        assert res["status"] == "SUCCESS"
+        assert mock_req.call_args[0][0] == "DELETE"
+        assert "/device/lock-123/lock/pin/otp" in mock_req.call_args[0][1]
+        assert mock_req.call_args[1]["json"] == {"otp": "987654"}
 
     await sample_client.close()
 
