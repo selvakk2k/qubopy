@@ -74,15 +74,45 @@ async def test_get_all_devices_factory(sample_client):
 
 @pytest.mark.asyncio
 async def test_send_command(sample_client):
-    """Verify command dispatching via POST."""
+    """Verify command dispatching via PUT and plaintext SUCCESS parsing."""
     cmd_resp = {"status": "SUCCESS"}
     mock_resp = MockClientResponse(200, json.dumps(cmd_resp))
 
-    with patch("aiohttp.ClientSession.request", return_value=mock_resp):
+    with patch("aiohttp.ClientSession.request", return_value=mock_resp) as mock_req:
         res = await sample_client.send_command(
             unit_uuid="u1", entity_uuid="e1", device_uuid="d1", command={"state": "ON"}
         )
         assert res["status"] == "SUCCESS"
+        assert mock_req.call_args[0][0] == "PUT"
+
+    # Also verify plaintext "SUCCESS" response parsing
+    mock_resp_raw = MockClientResponse(200, "SUCCESS")
+    with patch("aiohttp.ClientSession.request", return_value=mock_resp_raw) as mock_req:
+        res_raw = await sample_client.send_command(
+            unit_uuid="u1", entity_uuid="e1", device_uuid="d1", command={"state": "OFF"}
+        )
+        assert res_raw["status"] == "SUCCESS"
+        assert mock_req.call_args[0][0] == "PUT"
+
+    await sample_client.close()
+
+
+@pytest.mark.asyncio
+async def test_update_shadow_attribute(sample_client):
+    """Verify update_shadow_attribute dispatches PUT and validates parameters."""
+    mock_resp = MockClientResponse(200, json.dumps({"status": "SUCCESS"}))
+    with patch("aiohttp.ClientSession.request", return_value=mock_resp) as mock_req:
+        res = await sample_client.update_shadow_attribute(
+            unit_uuid="u1", entity_uuid="e1", device_uuid="d1", attributes={"brightness": 80}
+        )
+        assert res["status"] == "SUCCESS"
+        assert mock_req.call_args[0][0] == "PUT"
+
+    with pytest.raises(ValueError, match="unit_uuid must be provided"):
+        await sample_client.update_shadow_attribute("", "e1", "d1", {"brightness": 80})
+
+    with pytest.raises(ValueError, match="device_uuid must be provided"):
+        await sample_client.update_shadow_attribute("u1", "e1", "", {"brightness": 80})
 
     await sample_client.close()
 
@@ -401,26 +431,16 @@ async def test_client_get_device_shadow_v2(sample_client):
 
 @pytest.mark.asyncio
 async def test_client_get_device_events(sample_client):
-    """Verify get_device_events supports v2 metadata and v3 video clip downloads."""
-    mock_resp_v2 = MockClientResponse(200, json.dumps({"events": [{"id": "ev1"}]}))
-    with patch("aiohttp.ClientSession.request", return_value=mock_resp_v2) as mock_req:
+    """Verify get_device_events calls control-monitor event route."""
+    mock_resp = MockClientResponse(200, json.dumps({"events": [{"id": "ev1"}]}))
+    with patch("aiohttp.ClientSession.request", return_value=mock_resp) as mock_req:
         evs = await sample_client.get_device_events(
-            "unit-1", "cam-1", version="v2", limit=20
+            "unit-1", "cam-1", version="v1", limit=20
         )
         assert evs == [{"id": "ev1"}]
-        assert "/content-manager/api/v2/" in mock_req.call_args[0][1]
+        assert "/control-monitor/api/v1/" in mock_req.call_args[0][1]
+        assert "/device/cam-1/event" in mock_req.call_args[0][1]
         assert mock_req.call_args[1]["params"]["limit"] == 20
-
-    mock_resp_v3 = MockClientResponse(
-        200, json.dumps([{"id": "ev2", "downloadUrl": "https://s3/clip.mp4"}])
-    )
-    with patch("aiohttp.ClientSession.request", return_value=mock_resp_v3) as mock_req:
-        evs = await sample_client.get_device_events("unit-1", "cam-1", version="v3")
-        assert evs == [{"id": "ev2", "downloadUrl": "https://s3/clip.mp4"}]
-        assert "/content-manager/api/v3/" in mock_req.call_args[0][1]
-
-    with pytest.raises(ValueError, match="Unsupported device events version"):
-        await sample_client.get_device_events("unit-1", "cam-1", version="v4")
 
     await sample_client.close()
 

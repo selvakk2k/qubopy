@@ -142,7 +142,11 @@ class QuboClient:
                 elif not text or response.status == 204:
                     return {}
                 else:
-                    return json.loads(text)
+                    try:
+                        return json.loads(text)
+                    except json.JSONDecodeError:
+                        cleaned = text.strip()
+                        return {"status": cleaned, "response": cleaned}
         except aiohttp.ClientError as err:
             raise QuboConnectionError(f"HTTP connection failed: {err}") from err
         except json.JSONDecodeError as err:
@@ -165,11 +169,14 @@ class QuboClient:
                 retry=True,
             )
 
-    async def get_all_shadows(self) -> dict[str, DeviceShadow]:
-        """Fetch all device shadow states in bulk."""
-        path = PATH_GET_ALL_SHADOWS.format(sp=self.sp_id)
+    async def get_all_shadows(self, unit_uuid: str = "") -> dict[str, DeviceShadow]:
+        """Fetch all device shadow states in bulk via POST."""
+        if unit_uuid:
+            path = PATH_GET_ALL_SHADOWS.format(sp=self.sp_id, unit_uuid=unit_uuid)
+        else:
+            path = f"/unit-entity-management/api/v1/sp/{self.sp_id}/devices/shadow"
         try:
-            resp = await self.request("GET", path)
+            resp = await self.request("POST", path, json_data={})
         except QuboAuthError:
             raise
         except Exception as err:
@@ -193,7 +200,6 @@ class QuboClient:
                         raw=item,
                     )
         elif isinstance(resp, dict):
-            # Check if resp is directly a map of {deviceId: shadow}
             for dev_id, val in resp.items():
                 if isinstance(val, dict):
                     state_obj = val.get("state", {})
@@ -206,6 +212,7 @@ class QuboClient:
                         timestamp=val.get("timestamp"),
                         raw=val,
                     )
+
         return shadows
 
     @staticmethod
@@ -317,10 +324,15 @@ class QuboClient:
         entity_uuid: str = "",
     ) -> DeviceShadow:
         """Fetch real-time shadow state for an individual device."""
+        if not unit_uuid:
+            v2_resp = await self.get_device_shadow_v2(device_uuid)
+            return self._parse_shadow_payload(device_uuid, v2_resp)
+
+        ent_uuid = entity_uuid or device_uuid
         path = PATH_GET_DEVICE_SHADOW.format(
             sp=self.sp_id,
-            unit_uuid=unit_uuid or "default",
-            entity_uuid=entity_uuid or "default",
+            unit_uuid=unit_uuid,
+            entity_uuid=ent_uuid,
             device_uuid=device_uuid,
         )
         resp = await self.request("GET", path)
@@ -349,24 +361,14 @@ class QuboClient:
         self,
         unit_uuid: str,
         device_uuid: str,
-        version: str = "v2",
+        version: str = "v1",
         start_time: int | None = None,
         end_time: int | None = None,
         limit: int = 50,
     ) -> list[dict[str, Any]]:
-        """Fetch camera/doorbell timeline events.
-
-        Pass version='v3' if account subscription has cloud clip download entitlements.
-        """
-        v_str = version.lower()
-        if v_str not in ("v2", "v3"):
-            raise ValueError(
-                f"Unsupported device events version '{version}'. Expected 'v2' or 'v3'."
-            )
+        """Fetch timeline events for a device."""
         path = PATH_DEVICE_EVENTS.format(
-            v=v_str,
             sp=self.sp_id,
-            unit_uuid=unit_uuid,
             device_uuid=device_uuid,
         )
         params: dict[str, Any] = {"limit": limit}
@@ -699,13 +701,18 @@ class QuboClient:
         command: dict[str, Any],
     ) -> dict[str, Any]:
         """Dispatch an operational command to a device."""
+        if not device_uuid:
+            raise ValueError("device_uuid must be provided to dispatch a command")
+        if not unit_uuid:
+            raise ValueError("unit_uuid must be provided to dispatch a command")
+        ent_uuid = entity_uuid or device_uuid
         path = PATH_SEND_COMMAND.format(
             sp=self.sp_id,
-            unit_uuid=unit_uuid or "default",
-            entity_uuid=entity_uuid or "default",
+            unit_uuid=unit_uuid,
+            entity_uuid=ent_uuid,
             device_uuid=device_uuid,
         )
-        return await self.request("POST", path, json_data=command)
+        return await self.request("PUT", path, json_data=command)
 
     async def unlock_lock_via_gateway(
         self,
@@ -714,10 +721,15 @@ class QuboClient:
         gateway_uuid: str,
     ) -> dict[str, Any]:
         """Dispatch cloud unlock command to the in-home gateway device."""
+        if not gateway_uuid:
+            raise ValueError("gateway_uuid must be provided to unlock lock")
+        if not unit_uuid:
+            raise ValueError("unit_uuid must be provided to unlock lock")
+        ent_uuid = entity_uuid or gateway_uuid
         path = PATH_SEND_COMMAND.format(
             sp=self.sp_id,
-            unit_uuid=unit_uuid or "default",
-            entity_uuid=entity_uuid or "default",
+            unit_uuid=unit_uuid,
+            entity_uuid=ent_uuid,
             device_uuid=gateway_uuid,
         )
         payload = {
@@ -748,13 +760,18 @@ class QuboClient:
         attributes: dict[str, Any],
     ) -> dict[str, Any]:
         """Update desired shadow attribute directly."""
+        if not device_uuid:
+            raise ValueError("device_uuid must be provided to update shadow attribute")
+        if not unit_uuid:
+            raise ValueError("unit_uuid must be provided to update shadow attribute")
+        ent_uuid = entity_uuid or device_uuid
         path = PATH_UPDATE_SHADOW_ATTRIBUTE.format(
             sp=self.sp_id,
-            unit_uuid=unit_uuid or "default",
-            entity_uuid=entity_uuid or "default",
+            unit_uuid=unit_uuid,
+            entity_uuid=ent_uuid,
             device_uuid=device_uuid,
         )
-        return await self.request("POST", path, json_data=attributes)
+        return await self.request("PUT", path, json_data=attributes)
 
     async def get_all_devices(self) -> list[QuboDevice]:
         """Discover and instantiate all paired devices across the account."""

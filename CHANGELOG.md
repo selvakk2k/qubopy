@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.4] - 2026-10-17
+
+### Fixed
+- **Command Write Path (`PUT`)**: Updated `QuboClient.send_command` and `update_shadow_attribute` from HTTP `POST` to `PUT`, matching the official Qubo Android app Retrofit specifications.
+- **Plaintext Response Parsing**: Enhanced `QuboClient.request` to parse plaintext `"SUCCESS"` responses without raising `json.JSONDecodeError`.
+- **Parameter Validation**: Removed `"default"` string coercion for missing `unit_uuid` and `entity_uuid`; explicit UUID validation is now enforced to prevent invalid backend requests.
+- **Bulk Shadows Route**: Updated `QuboClient.get_all_shadows` to use HTTP `POST` with unit scoping support on `/units/{unit_uuid}/devices/shadow`.
+- **Device Events Route**: Corrected `PATH_DEVICE_EVENTS` to point to `/control-monitor/api/v1/sp/{sp}/device/{device_uuid}/event`.
+- **Session Refresh Lifecycle**: Invalidate expired session tokens on HTTP 400/401/403 refresh rejections to prevent infinite retry loops on stale tokens, and support `refresh_token` alias in refresh payloads.
+
 ## [0.1.3] - 2026-10-17
 
 ### Added

@@ -165,7 +165,7 @@ class QuboLock(QuboDevice):
         """
         target_gw = gateway_uuid or self.gateway_id
         if not target_gw:
-            u_id = self.unit_id or "default"
+            u_id = self.unit_id or "unknown"
             raise QuboCommandError(
                 f"Cannot unlock {self.device_id} ({self.name}): no in-home gateway "
                 f"(Video Doorbell Pro or Smart Camera) was found in unit '{u_id}'. "

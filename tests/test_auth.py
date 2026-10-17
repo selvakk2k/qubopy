@@ -499,3 +499,55 @@ def test_find_profile_index():
         QuboAuth.find_profile_index(profiles, profile_index=5)
 
 
+@pytest.mark.asyncio
+async def test_refresh_session_success():
+    """Verify refresh_session updates tokens, aliases, and expiry."""
+    auth = QuboAuth()
+    auth.set_tokens(
+        access_token="old-token",
+        refresh_token="old-refresh",
+        user_uuid="user-123",
+        expires_at=100.0,
+    )
+    refresh_payload = {
+        "accessToken": (
+            "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9."
+            "eyJleHAiOjIxMDAwMDAwMDAsInV1aWQiOiJ1c2VyLTEyMyJ9.sig"
+        ),
+        "refreshToken": "new-refresh",
+        "mqttPassword": "new-mqtt-pass",
+    }
+    mock_resp = MockClientResponse(200, json.dumps(refresh_payload))
+    with patch("aiohttp.ClientSession.post", return_value=mock_resp):
+        tokens = await auth.refresh_session()
+        assert tokens.access_token == refresh_payload["accessToken"]
+        assert tokens.refresh_token == "new-refresh"
+        assert tokens.mqtt_password == "new-mqtt-pass"
+        assert auth.is_authenticated is True
+
+    await auth.close()
+
+
+@pytest.mark.asyncio
+async def test_refresh_session_rejection_clears_tokens():
+    """Verify refresh rejection (400/401) clears invalid tokens and raises QuboAuthError."""
+    auth = QuboAuth()
+    auth.set_tokens(
+        access_token="expired-token",
+        refresh_token="expired-refresh",
+        user_uuid="user-123",
+        expires_at=100.0,
+    )
+    mock_resp = MockClientResponse(
+        400, json.dumps({"code": "ERR_SM_006", "message": ["Refresh Token expired"]})
+    )
+    with patch("aiohttp.ClientSession.post", return_value=mock_resp):
+        with pytest.raises(QuboAuthError, match="refresh token expired or invalid"):
+            await auth.refresh_session()
+
+        assert auth.is_authenticated is False
+        assert auth.tokens is None
+
+    await auth.close()
+
+

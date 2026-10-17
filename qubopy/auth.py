@@ -444,6 +444,12 @@ class QuboAuth:
                             response.status,
                             text[:200],
                         )
+                        if response.status in (400, 401, 403):
+                            self._tokens = None
+                            raise QuboAuthError(
+                                f"Session refresh rejected (HTTP {response.status}): "
+                                "refresh token expired or invalid; re-login required"
+                            )
                         raise QuboAuthError(
                             f"Session refresh failed (HTTP {response.status})"
                         )
@@ -455,14 +461,21 @@ class QuboAuth:
                     f"Invalid JSON returned by server during refresh: {err}"
                 ) from err
 
-            new_access_token = data.get("accessToken")
+            new_access_token = data.get("accessToken") or data.get("access_token")
             if not new_access_token:
                 raise QuboAuthError("Refresh response missing access token")
 
-            new_refresh_token = data.get("refreshToken") or self._tokens.refresh_token
+            new_refresh_token = (
+                data.get("refreshToken")
+                or data.get("refresh_token")
+                or (self._tokens.refresh_token if self._tokens else None)
+            )
             expires_at = _decode_jwt_expiry(new_access_token) or (time.time() + 86400)
 
-            mqtt_password = data.get("mqttPassword") or self._tokens.mqtt_password
+            mqtt_password = (
+                data.get("mqttPassword")
+                or (self._tokens.mqtt_password if self._tokens else None)
+            )
             self._tokens = TokenPayload(
                 access_token=new_access_token,
                 refresh_token=new_refresh_token,

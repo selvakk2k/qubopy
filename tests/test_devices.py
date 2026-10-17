@@ -152,6 +152,7 @@ async def test_lock_gateway_accessibility_and_unlock(sample_client):
         name="Front Door Lock",
         model="HLM01",
         type="SmartDoorLock",
+        unitUUID="unit-gw-01",
         extraData={"gatewayUUID": "cam-gw-01"},
     )
     lock_gw = QuboLock(info_gw, sample_client)

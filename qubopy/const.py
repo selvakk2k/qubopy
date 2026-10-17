@@ -32,7 +32,9 @@ PATH_UNIT_DEVICES: str = (
 PATH_GET_DEVICES: str = (
     "/unit-entity-management/api/v1/sp/{sp}/units/{unit_uuid}/entities/{entity_uuid}/devices/self"
 )
-PATH_GET_ALL_SHADOWS: str = "/unit-entity-management/api/v1/sp/{sp}/devices/shadow"
+PATH_GET_ALL_SHADOWS: str = (
+    "/unit-entity-management/api/v1/sp/{sp}/units/{unit_uuid}/devices/shadow"
+)
 PATH_GET_DEVICE_SHADOW: str = (
     "/unit-entity-management/api/v1/sp/{sp}/units/{unit_uuid}/entities/{entity_uuid}/devices/{device_uuid}/shadow"
 )
@@ -65,7 +67,7 @@ PATH_STOP_STREAM: str = (
     "/stream-manager/api/v2/sp/{sp}/stream/unit/{unit_uuid}/device/{device_uuid}"
 )
 PATH_DEVICE_EVENTS: str = (
-    "/content-manager/api/{v}/sp/{sp}/units/{unit_uuid}/devices/{device_uuid}/events"
+    "/control-monitor/api/v1/sp/{sp}/device/{device_uuid}/event"
 )
 PATH_DEVICE_STORAGE: str = (
     "/control-monitor/api/v1/sp/{sp}/unit/{unit_uuid}/device/{device_uuid}/storage"
