@@ -190,24 +190,33 @@ class QuboDevice:
         command: str,
         parameters: dict[str, Any] | None = None,
         instance_id: int = 0,
+        handle_name: str | None = None,
     ) -> dict[str, Any]:
-        """Dispatch a control command using the official cloud envelope."""
-        payload = {
-            "devices": {
-                "handleName": self.name,
-                "deviceUUID": self.device_id,
-                "services": {
-                    service: {
-                        "commands": {
-                            command: {
-                                "parameters": parameters or {},
-                                "instanceId": instance_id,
-                            }
+        """Dispatch a control command using the official cloud envelope.
+
+        Note:
+            The standard device command envelope passes `deviceUUID` and `services`.
+            `handle_name` is optional and unverified against physical hardware (the app's
+            internal database stores `handleName` separately from `name`). Some services
+            also accept a flat single-value command format (e.g., `commands: {"state": "enable"}`).
+        """
+        device_entry: dict[str, Any] = {
+            "deviceUUID": self.device_id,
+            "services": {
+                service: {
+                    "commands": {
+                        command: {
+                            "parameters": parameters or {},
+                            "instanceId": instance_id,
                         }
                     }
-                },
-            }
+                }
+            },
         }
+        if handle_name is not None:
+            device_entry["handleName"] = handle_name
+
+        payload = {"devices": device_entry}
         return await self.send_command(payload)
 
     async def reboot(self) -> dict[str, Any]:

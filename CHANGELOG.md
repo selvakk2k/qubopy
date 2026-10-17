@@ -5,17 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.2.0] - 2026-10-17
 
 ### Added
 - **Device Attribute Reads (v2)**: Added `QuboDevice.read_attribute_v2(service, attribute)` for direct access to timestamped shadow readings without formatting raw client calls.
-- **Device Attribute Writes & Commands**: Added `QuboDevice.write_attribute(service, attribute, value)` to format `{instanceId, serviceName, attributeName, attributeValue}` and `QuboDevice.send_service_command(service, command, parameters)` to build nested control envelopes, plus `QuboDevice.reboot()` convenience helper.
-- **Doorbell Video Events (VMS)**: Added `PATH_VMS_DEVICE_EVENTS` route and `get_vms_doorbell_events` helper on `QuboClient` and `QuboCamera` for doorbell ring events from cloud video service.
+- **Device Attribute Writes & Commands**: Added `QuboDevice.write_attribute(service, attribute, value)` to format `{instanceId, serviceName, attributeName, attributeValue}` and `QuboDevice.send_service_command(service, command, parameters, instance_id, handle_name)` to build nested control envelopes, plus `QuboDevice.reboot()` convenience helper.
+- **Doorbell Video Events (VMS)**: Added `PATH_VMS_DEVICE_EVENTS` route and `get_vms_doorbell_events` helper on `QuboClient` and `QuboCamera` for doorbell ring events from cloud video service, with query parameters (`toTimestamp`, `recordNumber`, and `fromTimestamp`) modeled after the decompiled Android app.
 - **P2P Identifier Overrides**: Added `mobile_uuid` and `src_device_id` parameters to `QuboClient.initiate_p2p_call` and `QuboCamera.initiate_p2p_call` with documentation on retrieving the paired phone's registered UUID.
 
-### Changed
+### Changed (Breaking)
 - **Strict Scope Validation**: Required `entity_uuid` in `QuboClient.send_command`, `update_shadow_attribute`, and `unlock_lock_via_gateway` (raising `ValueError` if missing), eliminating silent fallback to `device_uuid`. `QuboDevice.send_command`, `update_attribute`, and `QuboLock.unlock` now raise `QuboCommandError` if either `unit_id` or `entity_id` is unbound.
-- **Static Refresh Token Preservation**: Preserved 180-day refresh token in `QuboAuth.refresh_session` when the cloud response omits `refreshToken` (verified against live Qubo cloud hardware API, ensuring continuous multi-month operation).
+
+### Changed
+- **Static Refresh Token Preservation**: Preserved 180-day refresh token in `QuboAuth.refresh_session` when cloud refresh response omits `refreshToken`. Observed on an email account over 3 consecutive hourly refresh cycles without token rotation, with JWT expiration claims of 3,600s (access) and 15,552,000s (180 days refresh), backed by an invalidation guard on HTTP 400/401/403.
+- **Command Envelope Default**: Omitted `handleName` by default from `send_service_command` envelope (retained as optional unverified parameter `handle_name`) to match captured command shapes from Android app traces and prevent rejection by cloud handlers.
 
 ## [0.1.6] - 2026-10-17
 

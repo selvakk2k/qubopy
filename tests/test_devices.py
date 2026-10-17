@@ -1084,13 +1084,39 @@ async def test_device_write_attribute_and_service_command(sample_client):
         device_uuid="d1",
         command={
             "devices": {
-                "handleName": "Dev 1",
                 "deviceUUID": "d1",
                 "services": {
                     "deviceReboot": {
                         "commands": {
                             "reboot": {
                                 "parameters": {},
+                                "instanceId": 0,
+                            }
+                        }
+                    }
+                },
+            }
+        },
+    )
+
+    # Verify optional handle_name is included when passed
+    sample_client.send_command.reset_mock()
+    await dev.send_service_command(
+        "siren", "soundSiren", parameters={"duration": 10}, handle_name="CustomHandle"
+    )
+    sample_client.send_command.assert_awaited_once_with(
+        unit_uuid="u1",
+        entity_uuid="e1",
+        device_uuid="d1",
+        command={
+            "devices": {
+                "deviceUUID": "d1",
+                "handleName": "CustomHandle",
+                "services": {
+                    "siren": {
+                        "commands": {
+                            "soundSiren": {
+                                "parameters": {"duration": 10},
                                 "instanceId": 0,
                             }
                         }
@@ -1124,6 +1150,19 @@ async def test_camera_get_vms_doorbell_events(sample_client):
     sample_client.get_vms_doorbell_events.assert_awaited_once_with(
         unit_uuid="u1",
         device_uuid="cam1",
+        from_timestamp=None,
+        to_timestamp=None,
+        record_number=10,
+    )
+
+    sample_client.get_vms_doorbell_events.reset_mock()
+    await cam.get_vms_doorbell_events(from_timestamp=1000, to_timestamp=2000, record_number=5)
+    sample_client.get_vms_doorbell_events.assert_awaited_once_with(
+        unit_uuid="u1",
+        device_uuid="cam1",
+        from_timestamp=1000,
+        to_timestamp=2000,
+        record_number=5,
     )
 
 

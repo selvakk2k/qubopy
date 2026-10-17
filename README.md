@@ -110,8 +110,8 @@ python -m qubopy --help
 `qubopy` supports two distinct authentication pathways provided by Qubo cloud services:
 
 ### 1. Email and Password (Continuous Session with Refresh Tokens)
-* **Session Lifecycle**: Continuous. Qubo returns an `accessToken` (1 hour validity) along with a valid server-issued `refreshToken` (180 days / 6 months validity).
-* **Automatic Renewal**: `qubopy` proactively refreshes the access token before expiration using `POST /auth/refresh`, preserving the static 180-day refresh token across renews.
+* **Session Lifecycle**: Continuous. Qubo returns an `accessToken` (1 hour validity; `exp: 3600s`) along with a server-issued `refreshToken` (180 days / 6 months validity; `exp: 15552000s`).
+* **Automatic Renewal**: `qubopy` proactively refreshes the access token before expiration using `POST /auth/refresh`, preserving the static 180-day refresh token across renews. Observed on an email account over 3 consecutive hourly refresh cycles without token rotation, backed by an invalidation guard on HTTP 400/401/403.
 * **Target Use Case**: Recommended for permanent Home Assistant integrations and continuous 24/7 cloud polling.
 
 ### 2. Phone Number and SMS OTP (1-Hour Session / Provisioning Extractor)

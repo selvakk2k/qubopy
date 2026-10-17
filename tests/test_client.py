@@ -710,3 +710,58 @@ async def test_client_live_stream_start_and_stop(sample_client):
         assert res_fail is False
 
     await sample_client.close()
+
+
+@pytest.mark.asyncio
+async def test_get_vms_doorbell_events(sample_client):
+    """Verify get_vms_doorbell_events constructs query params with defaults and custom options."""
+    events_payload = [
+        {
+            "transactionUUID": "tx-123",
+            "createdTimestamp": 1700000000000,
+            "closedTimestamp": 1700000010000,
+            "callStatus": "answered",
+            "isRecorded": True,
+            "snapshot": "https://vms.quboworld.com/snap1.jpg",
+        }
+    ]
+    mock_resp = MockClientResponse(200, json.dumps(events_payload))
+
+    # Test default query parameters
+    with patch("aiohttp.ClientSession.request", return_value=mock_resp) as mock_req:
+        now_ms = int(time.time() * 1000)
+        events = await sample_client.get_vms_doorbell_events(unit_uuid="u-1", device_uuid="cam-1")
+        assert len(events) == 1
+        assert events[0]["transactionUUID"] == "tx-123"
+
+        method, req_url = mock_req.call_args[0][:2]
+        assert method == "GET"
+        assert req_url.endswith(f"/vms/api/v1/sp/{sample_client.sp_id}/units/u-1/devices/cam-1")
+        params = mock_req.call_args[1]["params"]
+        assert params["recordNumber"] == "10"
+        assert "fromTimestamp" not in params
+        assert abs(int(params["toTimestamp"]) - now_ms) < 5000
+
+    # Test custom query parameters
+    with patch("aiohttp.ClientSession.request", return_value=mock_resp) as mock_req:
+        await sample_client.get_vms_doorbell_events(
+            unit_uuid="u-1",
+            device_uuid="cam-1",
+            from_timestamp=1700000000000,
+            to_timestamp=1700050000000,
+            record_number=25,
+        )
+        params = mock_req.call_args[1]["params"]
+        assert params == {
+            "toTimestamp": "1700050000000",
+            "recordNumber": "25",
+            "fromTimestamp": "1700000000000",
+        }
+
+    # Test validation
+    with pytest.raises(ValueError, match="unit_uuid must be provided"):
+        await sample_client.get_vms_doorbell_events("", "cam-1")
+    with pytest.raises(ValueError, match="device_uuid must be provided"):
+        await sample_client.get_vms_doorbell_events("u-1", "")
+
+    await sample_client.close()

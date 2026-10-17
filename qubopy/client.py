@@ -3,6 +3,7 @@
 import json
 import logging
 import os
+import time
 import uuid
 import warnings
 from typing import Any
@@ -452,11 +453,20 @@ class QuboClient:
         self,
         unit_uuid: str,
         device_uuid: str,
+        from_timestamp: int | None = None,
+        to_timestamp: int | None = None,
+        record_number: int = 10,
     ) -> list[dict[str, Any]]:
         """Fetch doorbell ring activity from the cloud video service (VMS).
 
         Returns a list of raw event dicts containing transactionUUID,
         createdTimestamp, closedTimestamp, callStatus, isRecorded, and snapshot.
+
+        Note:
+            Query defaults (`toTimestamp` defaulting to current millisecond timestamp,
+            and `recordNumber` defaulting to 10) are unverified heuristics derived from
+            the decompiled Android app (`a6/Y4.java` method `vd`). `fromTimestamp` is
+            included only if provided and greater than zero.
         """
         if not unit_uuid:
             raise ValueError("unit_uuid must be provided to fetch VMS doorbell events")
@@ -467,7 +477,16 @@ class QuboClient:
             unit_uuid=unit_uuid,
             device_uuid=device_uuid,
         )
-        resp = await self.request("GET", path)
+        if to_timestamp is None:
+            to_timestamp = int(time.time() * 1000)
+        params: dict[str, Any] = {
+            "toTimestamp": str(to_timestamp),
+            "recordNumber": str(record_number),
+        }
+        if from_timestamp is not None and from_timestamp > 0:
+            params["fromTimestamp"] = str(from_timestamp)
+
+        resp = await self.request("GET", path, params=params)
         if isinstance(resp, list):
             return resp
         if isinstance(resp, dict):
