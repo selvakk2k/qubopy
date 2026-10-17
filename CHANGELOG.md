@@ -18,7 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - **Static Refresh Token Preservation**: Preserved 180-day refresh token in `QuboAuth.refresh_session` when cloud refresh response omits `refreshToken`. Observed on an email account over 3 consecutive hourly refresh cycles without token rotation, with JWT expiration claims of 3,600s (access) and 15,552,000s (180 days refresh), backed by an invalidation guard on HTTP 400/401/403.
-- **Command Envelope Default**: Omitted `handleName` by default from `send_service_command` envelope (retained as optional unverified parameter `handle_name`) to match captured command shapes from Android app traces and prevent rejection by cloud handlers.
+- **Command Envelope Default**: Omitted `handleName` by default from `send_service_command` envelope (retained as optional unverified parameter `handle_name`) to match captured command shapes from Android app traces.
 
 ## [0.1.6] - 2026-10-17
 

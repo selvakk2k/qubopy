@@ -198,7 +198,8 @@ class QuboDevice:
             The standard device command envelope passes `deviceUUID` and `services`.
             `handle_name` is optional and unverified against physical hardware (the app's
             internal database stores `handleName` separately from `name`). Some services
-            also accept a flat single-value command format (e.g., `commands: {"state": "enable"}`).
+            have also been observed with a flat single-value command format relayed by
+            the cloud (e.g., `commands: {"state": "enable"}`).
         """
         device_entry: dict[str, Any] = {
             "deviceUUID": self.device_id,
