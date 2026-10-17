@@ -30,6 +30,7 @@ from qubopy.models import (
     RtspStreamInfo,
     TokenPayload,
     Unit,
+    extract_unit_uuid,
 )
 from qubopy.mqtt import QuboMqttEvent, QuboMqttListener
 
@@ -65,4 +66,5 @@ __all__ = [
     "Unit",
     "__version__",
     "create_device",
+    "extract_unit_uuid",
 ]

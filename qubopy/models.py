@@ -28,6 +28,22 @@ class Unit(BaseModel):
     entities: list[dict[str, Any]] = Field(default_factory=list)
 
 
+def extract_unit_uuid(unit: Any) -> str | None:
+    """Extract unit UUID from a unit dictionary or Unit model.
+
+    Tries 'unitUUID', 'uuid', and 'unitId'. Note: these key variations are
+    unit-tested against reverse-engineered schemas, but have not been
+    verified against physical multi-unit responses. Users should supply
+    'unit_uuid' explicitly if auto-discovery fails.
+    """
+    if isinstance(unit, Unit):
+        return unit.uuid or None
+    if isinstance(unit, dict):
+        uid = unit.get("unitUUID") or unit.get("uuid") or unit.get("unitId")
+        return str(uid) if uid else None
+    return None
+
+
 class Entity(BaseModel):
     """A room, sub-group, or hub boundary within a unit."""
 

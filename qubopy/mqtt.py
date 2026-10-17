@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any
 
 from qubopy.const import MQTT_BROKER_HOST, MQTT_BROKER_PORT
 from qubopy.exceptions import QuboAuthError, QuboConnectionError
+from qubopy.models import extract_unit_uuid
 
 if TYPE_CHECKING:
     from qubopy.auth import QuboAuth
@@ -134,6 +135,7 @@ class QuboMqttListener:
         self._is_running = False
         self._stopping = False
         self._subscribed = False
+        self._subscribed_event: asyncio.Event = asyncio.Event()
         self._subscribed_mids: set[int] = set()
         self._connect_future: asyncio.Future[bool] | None = None
         self._reconnect_task: asyncio.Task[None] | None = None
@@ -155,6 +157,21 @@ class QuboMqttListener:
     def subscribed(self) -> bool:
         """Return True if the broker has confirmed subscription to monitor topics."""
         return self._subscribed
+
+    async def wait_subscribed(self, timeout: float = 5.0) -> bool:
+        """Wait until the broker confirms subscription to monitor topics.
+
+        Args:
+            timeout: Seconds to wait for broker SUBACK.
+
+        Returns:
+            True if subscription was confirmed, False if timed out.
+        """
+        try:
+            await asyncio.wait_for(self._subscribed_event.wait(), timeout=timeout)
+            return True
+        except (TimeoutError, asyncio.TimeoutError):
+            return False
 
     @property
     def client_id(self) -> str:
@@ -212,6 +229,10 @@ class QuboMqttListener:
     async def start(self, connect_timeout: float = 15.0) -> None:
         """Connect to the Qubo MQTT broker and wait for CONNACK validation.
 
+        Note:
+            Returns once CONNACK is validated, before SUBACK arrives. Use
+            `await listener.wait_subscribed()` to wait for broker subscription confirmation.
+
         Args:
             connect_timeout: Seconds to wait for broker CONNACK before raising
                 QuboConnectionError.
@@ -229,6 +250,7 @@ class QuboMqttListener:
 
         if self._loop is None:
             self._loop = asyncio.get_running_loop()
+        loop = self._loop
 
         # Auto-discover units if not supplied
         if not self._unit_uuids:
@@ -236,10 +258,14 @@ class QuboMqttListener:
                 units = await self._client.get_units()
                 discovered: list[tuple[str, str]] = []
                 for u in units:
-                    if isinstance(u, dict):
-                        uid = u.get("unitUUID") or u.get("uuid") or u.get("unitId")
-                        if uid:
-                            discovered.append((str(uid), str(u.get("name", "Home"))))
+                    uid = extract_unit_uuid(u)
+                    name = (
+                        u.get("name", "Home")
+                        if isinstance(u, dict)
+                        else getattr(u, "name", "Home")
+                    )
+                    if uid:
+                        discovered.append((uid, str(name)))
                 if len(discovered) > 1:
                     _LOGGER.warning(
                         "Found %d units on Qubo account. Subscribing to default unit '%s' (%s). "
@@ -264,6 +290,7 @@ class QuboMqttListener:
 
         self._stopping = False
         self._subscribed = False
+        self._subscribed_event.clear()
 
         # Instantiate Paho MQTT Client (API version 2)
         try:
@@ -286,7 +313,7 @@ class QuboMqttListener:
         mqttc.username_pw_set(username=user_uuid, password=token)
         mqttc.tls_set_context(ssl.create_default_context())
 
-        self._connect_future = self._loop.create_future()
+        self._connect_future = loop.create_future()
 
         def on_connect(
             client: Any,
@@ -307,13 +334,15 @@ class QuboMqttListener:
                 )
                 self._subscribed_mids.clear()
                 self._subscribed = False
+                self._subscribed_event.clear()
                 for u in self._unit_uuids:
                     client.subscribe(f"/monitor/{u}/#", qos=0)
 
                 if self._connect_future and not self._connect_future.done():
-                    self._loop.call_soon_threadsafe(self._connect_future.set_result, True)
+                    loop.call_soon_threadsafe(self._connect_future.set_result, True)
             else:
                 _LOGGER.error("Qubo MQTT connection rejected by broker: rc=%s", rc)
+                self._subscribed_event.clear()
                 if self._connect_future and not self._connect_future.done():
                     if code in (4, 5, 134, 135):
                         err: Exception = QuboAuthError(
@@ -321,7 +350,7 @@ class QuboMqttListener:
                         )
                     else:
                         err = QuboConnectionError(f"MQTT broker rejected connection (rc={rc})")
-                    self._loop.call_soon_threadsafe(self._connect_future.set_exception, err)
+                    loop.call_soon_threadsafe(self._connect_future.set_exception, err)
                 elif code in (4, 5, 134, 135):
                     # Broker rejected credentials on reconnect (e.g. revoked/expired token)
                     _LOGGER.error(
@@ -329,9 +358,9 @@ class QuboMqttListener:
                         rc,
                     )
                     self._is_running = False
-                    if self._loop and self._loop.is_running():
-                        self._loop.call_soon_threadsafe(
-                            lambda: self._loop.create_task(self._handle_auth_failure())
+                    if loop.is_running():
+                        loop.call_soon_threadsafe(
+                            lambda: loop.create_task(self._handle_auth_failure())
                         )
 
         def on_subscribe(
@@ -353,9 +382,12 @@ class QuboMqttListener:
             if has_failure:
                 self._subscribed_mids.clear()
                 self._subscribed = False
+                self._subscribed_event.clear()
             else:
                 self._subscribed_mids.add(mid)
                 self._subscribed = len(self._subscribed_mids) >= len(self._unit_uuids)
+                if self._subscribed:
+                    self._subscribed_event.set()
 
         def on_message(client: Any, userdata: Any, msg: Any) -> None:
             self._handle_raw_message(msg.topic, msg.payload)
@@ -369,9 +401,10 @@ class QuboMqttListener:
         ) -> None:
             _LOGGER.debug("Disconnected from Qubo MQTT broker: rc=%s", rc)
             self._subscribed = False
+            self._subscribed_event.clear()
             self._subscribed_mids.clear()
-            if not self._stopping and self._is_running and self._loop and self._loop.is_running():
-                self._loop.call_soon_threadsafe(self._start_reconnect_task)
+            if not self._stopping and self._is_running and loop.is_running():
+                loop.call_soon_threadsafe(self._start_reconnect_task)
 
         mqttc.on_connect = on_connect
         mqttc.on_subscribe = on_subscribe
@@ -381,7 +414,7 @@ class QuboMqttListener:
         self._mqttc = mqttc
 
         # Connect on executor to avoid blocking the asyncio event loop
-        await self._loop.run_in_executor(
+        await loop.run_in_executor(
             None,
             mqttc.connect,
             self._broker_host,
@@ -416,14 +449,15 @@ class QuboMqttListener:
 
     def _start_reconnect_task(self) -> None:
         """Schedule background reconnection task on the event loop."""
+        loop = self._loop
         if (
             not self._stopping
             and self._is_running
             and (self._reconnect_task is None or self._reconnect_task.done())
-            and self._loop
-            and self._loop.is_running()
+            and loop is not None
+            and loop.is_running()
         ):
-            self._reconnect_task = self._loop.create_task(self._reconnect_worker())
+            self._reconnect_task = loop.create_task(self._reconnect_worker())
 
     @staticmethod
     def _reconnect_sync(mqttc: Any) -> None:
@@ -463,9 +497,10 @@ class QuboMqttListener:
                 break
 
             self._mqttc.username_pw_set(username=user_uuid, password=fresh_token)
+            loop = self._loop
             try:
-                if self._loop is not None and self._loop.is_running():
-                    await self._loop.run_in_executor(None, self._reconnect_sync, self._mqttc)
+                if loop is not None and loop.is_running():
+                    await loop.run_in_executor(None, self._reconnect_sync, self._mqttc)
                 else:
                     self._reconnect_sync(self._mqttc)
                 _LOGGER.info("MQTT reconnect command dispatched to broker.")
@@ -478,6 +513,7 @@ class QuboMqttListener:
         self._stopping = True
         self._is_running = False
         self._subscribed = False
+        self._subscribed_event.clear()
         self._subscribed_mids.clear()
 
         current_task = None
@@ -501,9 +537,10 @@ class QuboMqttListener:
             mqttc = self._mqttc
             self._mqttc = None
 
-            if self._loop is not None and self._loop.is_running():
-                await self._loop.run_in_executor(None, mqttc.disconnect)
-                await self._loop.run_in_executor(None, mqttc.loop_stop)
+            loop = self._loop
+            if loop is not None and loop.is_running():
+                await loop.run_in_executor(None, mqttc.disconnect)
+                await loop.run_in_executor(None, mqttc.loop_stop)
             else:
                 mqttc.disconnect()
                 mqttc.loop_stop()

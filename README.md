@@ -35,6 +35,7 @@ An asynchronous Python client library and local Bluetooth Low Energy (BLE) crede
 - [Command Line Interface (CLI)](#command-line-interface-cli)
   - [Session & Token Management](#session--token-management)
 - [Cloud MQTT Broker & Real-Time Telemetry](#cloud-mqtt-broker--real-time-telemetry)
+  - [Verification Status](#4-verification-status)
 - [Contributing & Testing](#contributing--testing)
 - [Credits & License](#credits--license)
 
@@ -769,6 +770,8 @@ async def main():
 
         # Run listener as an async context manager
         async with listener:
+            # Wait for broker SUBACK confirmation before proceeding
+            await listener.wait_subscribed()
             print("Listening for real-time Qubo events... Press Ctrl+C to stop.")
             while True:
                 await asyncio.sleep(1)
@@ -865,6 +868,18 @@ When actuating a device or invoking device services (such as initiating a live v
 #### Smart Locks & Sensor Telemetry
 > [!NOTE]
 > Smart locks use the identical payload envelope under the `lockControl` service (for example, `services.lockControl.commands.unlock` or `services.lockControl.events.stateChanged`). The lock status values `"locked"` and `"unlocked"` are confirmed from official Android client decompilation; other transit or error states remain unverified on live hardware.
+
+### 4. Verification Status
+
+The table below outlines real hardware and automated test verification across components:
+
+| Area | Status |
+| :--- | :--- |
+| MQTT connect, JWT auth, `/monitor/{unit}/#` subscribe, camera events | Tested on a real Qubo camera |
+| Reconnect after a dropped connection, token refresh on reconnect, stop on rejected credentials | Tested against a local Mosquitto broker (automated, `tests/test_mqtt_live.py`) |
+| Lock events (`lockControl` / `stateChanged`) | **Not tested**: envelope inferred from the app and from camera events; no lock available |
+| Whether the real Qubo broker drops an existing connection when the 1-hour phone-OTP token expires | **Not tested** |
+| Long-running email-account listener across a real access-token expiry | **Not tested** |
 
 ---
 

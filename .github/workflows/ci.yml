@@ -31,11 +31,18 @@ jobs:
         run: |
           ruff check .
 
+      - name: Install Mosquitto (live broker tests)
+        run: sudo apt-get update && sudo apt-get install -y mosquitto mosquitto-clients
+
       - name: Run test suite with pytest
+        env:
+          QUBOPY_REQUIRE_MOSQUITTO: "1"
         run: |
           python -m pytest
 
       - name: Verify sdist package build and test suite
+        env:
+          QUBOPY_REQUIRE_MOSQUITTO: "1"
         run: |
           pip install build
           python -m build --sdist

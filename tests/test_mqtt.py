@@ -2,7 +2,6 @@
 
 import asyncio
 import json
-import shutil
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -827,9 +826,48 @@ async def test_mqtt_multi_unit_subscription_tracking() -> None:
         await listener.stop()
 
 
-@pytest.mark.skipif(shutil.which("mosquitto") is None, reason="Mosquitto broker not installed")
 @pytest.mark.asyncio
-async def test_mqtt_live_mosquitto_reconnect_harness() -> None:
-    """End-to-end integration test against a local Mosquitto broker if installed."""
-    # Placeholder for environments with a local test Mosquitto broker daemon
-    pass
+async def test_mqtt_wait_subscribed_success() -> None:
+    """Verify wait_subscribed returns True when subscription is confirmed."""
+    auth = QuboAuth()
+    auth._tokens = TokenPayload(access_token="token", user_uuid="user-1")
+    auth.get_valid_access_token = AsyncMock(return_value="token")  # type: ignore[method-assign]
+
+    listener = QuboMqttListener(auth, unit_uuid="unit-1")
+    mock_client = _create_mock_mqtt_client(on_connect_rc=0)
+
+    with patch("paho.mqtt.client.Client", return_value=mock_client):
+        await listener.start()
+        assert listener.subscribed is False
+
+        # Schedule SUBACK confirmation
+        loop = asyncio.get_running_loop()
+        loop.call_later(0.01, lambda: mock_client.on_subscribe(mock_client, None, 1, [0]))
+
+        res = await listener.wait_subscribed(timeout=1.0)
+        assert res is True
+        assert listener.subscribed is True
+
+        await listener.stop()
+
+
+@pytest.mark.asyncio
+async def test_mqtt_wait_subscribed_timeout() -> None:
+    """Verify wait_subscribed returns False on timeout if SUBACK never arrives."""
+    auth = QuboAuth()
+    auth._tokens = TokenPayload(access_token="token", user_uuid="user-1")
+    auth.get_valid_access_token = AsyncMock(return_value="token")  # type: ignore[method-assign]
+
+    listener = QuboMqttListener(auth, unit_uuid="unit-1")
+    mock_client = _create_mock_mqtt_client(on_connect_rc=0)
+
+    with patch("paho.mqtt.client.Client", return_value=mock_client):
+        await listener.start()
+        assert listener.subscribed is False
+
+        res = await listener.wait_subscribed(timeout=0.05)
+        assert res is False
+        assert listener.subscribed is False
+
+        await listener.stop()
+

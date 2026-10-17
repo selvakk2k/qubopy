@@ -45,6 +45,7 @@ from qubopy.models import (
     DeviceModelInfo,
     DeviceShadow,
     RtspStreamInfo,
+    extract_unit_uuid,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -723,7 +724,7 @@ class QuboClient:
 
         units = await self.get_units()
         for unit in units:
-            unit_uuid = unit.get("unitUUID") or unit.get("uuid") or unit.get("unitId") or ""
+            unit_uuid = extract_unit_uuid(unit) or ""
             raw_devs = await self.get_devices_for_unit(unit_uuid) if unit_uuid else []
 
             # 1. Identify any active gateway devices in this unit
