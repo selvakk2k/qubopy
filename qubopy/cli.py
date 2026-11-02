@@ -550,6 +550,7 @@ async def _cmd_stream(args: argparse.Namespace) -> int:
 
     device_id = getattr(args, "device_id", None)
     quality = getattr(args, "quality", "high") or "high"
+    user_app_id = getattr(args, "user_app_id", None)
     try:
         async with client:
             devices = await client.get_all_devices()
@@ -566,11 +567,27 @@ async def _cmd_stream(args: argparse.Namespace) -> int:
                 print(f"Error: Device {target.name} is not a camera.", file=sys.stderr)
                 return 1
 
+            if not user_app_id:
+                for d in devices:
+                    d_name = d.name or ""
+                    if d_name.startswith("Mobile App - "):
+                        user_app_id = d_name[len("Mobile App - "):]
+                        break
+                    if d_name.startswith("MobileApp_"):
+                        user_app_id = d_name[len("MobileApp_"):]
+                        break
+
             print(f"Requesting live stream for {target.name} ({target.device_id}) ...")
-            stream_url = await target.start_stream(quality=quality)
+            stream_url = await target.start_stream(quality=quality, user_app_id=user_app_id)
             print("\nLive RTSPS Stream URL:")
             print(stream_url)
-            print("\nYou can open this URL directly in VLC, ffplay, go2rtc, or Home Assistant.")
+            print("\nPlayback Instructions:")
+            print("  - VLC / ffplay: Must use TCP interleaved transport:")
+            print(f'      vlc --rtsp-tcp "{stream_url}"')
+            print(f'      ffplay -rtsp_transport tcp "{stream_url}"')
+            print("  - Web Browsers: Browsers do not support RTSP/RTSPS directly.")
+            print("      Use go2rtc, WebRTC proxy, or Home Assistant Generic Camera / WebRTC card.")
+            print("  - Note: Video Doorbells (HCD) stream via local P2P UDP rather than cloud Wowza.")
             return 0
     except QuboError as err:
         _handle_cli_error(err)
@@ -718,6 +735,7 @@ def main() -> None:
     p_stream.add_argument(
         "--quality", default="high", choices=["high", "low"], help="Stream resolution/quality"
     )
+    p_stream.add_argument("--user-app-id", help="Paired mobile app device ID override")
     p_stream.add_argument("--token", help="Override JWT access token")
     p_stream.add_argument("--user-uuid", help="Override User UUID")
 

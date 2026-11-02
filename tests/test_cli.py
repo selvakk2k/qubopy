@@ -319,3 +319,46 @@ def test_cli_debug_flag_configures_logging():
         assert exc_info.value.code == 0
         mock_basic_config.assert_called_once()
         assert mock_basic_config.call_args[1]["level"] == logging.DEBUG
+
+
+@pytest.mark.asyncio
+async def test_cmd_stream_instructions(capsys):
+    """Verify stream command resolves camera, uses user_app_id, and prints playback instructions."""
+    from unittest.mock import MagicMock
+    from qubopy.cli import _cmd_stream
+    from qubopy.devices import QuboCamera
+    from qubopy.models import DeviceModelInfo, DeviceShadow
+
+    mock_client = AsyncMock()
+    mock_client.auth.device_id = "test-auth-device-id"
+
+    cam_info = DeviceModelInfo(
+        deviceUUID="cam-01",
+        unitUUID="u-01",
+        entityUUID="e-01",
+        deviceType="ptzeCamera",
+        name="Living Room Cam",
+    )
+    cam = QuboCamera(cam_info, mock_client, DeviceShadow())
+    cam.start_stream = AsyncMock(return_value="rtsps://wowza.qubo.com/live/cam-01")
+
+    mock_mobile = MagicMock()
+    mock_mobile.device_id = "mob-01"
+    mock_mobile.name = "Mobile App - my-phone-id"
+
+    mock_client.get_all_devices = AsyncMock(return_value=[mock_mobile, cam])
+
+    args = argparse.Namespace(device_id="cam-01", quality="high", user_app_id=None)
+
+    with patch("qubopy.cli._get_authenticated_client", AsyncMock(return_value=mock_client)):
+        code = await _cmd_stream(args)
+
+    assert code == 0
+    cam.start_stream.assert_called_once_with(quality="high", user_app_id="my-phone-id")
+    captured = capsys.readouterr().out
+    assert "Live RTSPS Stream URL:" in captured
+    assert "rtsps://wowza.qubo.com/live/cam-01" in captured
+    assert "vlc --rtsp-tcp" in captured
+    assert "ffplay -rtsp_transport tcp" in captured
+    assert "Web Browsers: Browsers do not support RTSP/RTSPS directly" in captured
+

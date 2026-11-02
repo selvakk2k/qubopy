@@ -93,6 +93,23 @@ async def test_email_login_invalid_credentials():
 
 
 @pytest.mark.asyncio
+async def test_email_login_server_error_detail():
+    """Verify that HTTP 400 error surfaces the backend code and message."""
+    auth = QuboAuth()
+    mock_resp = MockClientResponse(
+        400, json.dumps({"code": "ERR_SM_002", "message": ["Invalid user"]})
+    )
+
+    with (
+        patch("aiohttp.ClientSession.post", return_value=mock_resp),
+        pytest.raises(QuboAuthError, match=r"Email login failed \(HTTP 400: ERR_SM_002 - Invalid user\)"),
+    ):
+        await auth.login_with_email("user@example.com", "wrong")
+
+    await auth.close()
+
+
+@pytest.mark.asyncio
 async def test_phone_otp_flow():
     """Verify phone OTP flow with required App-Id, Source, and deviceAttribute."""
     auth = QuboAuth(device_id="test-device-uuid")

@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2026-11-03
+
+### Fixed
+- **Auth Error Transparency**: Added backend error payload parsing (`code` and `message`) in `QuboAuth` across email login, phone OTP, and session refresh. Clear error codes (such as `ERR_SM_002 - Invalid user`) are now surfaced in `QuboAuthError` instead of generic `HTTP 400` errors.
+- **RTSPS Stream Device Authorization**: Enhanced `qubopy stream` CLI command to automatically detect and supply the account's registered paired mobile app device ID (`user_app_id`) when minting stream URLs, preventing stream manager session rejection.
+
+### Added
+- **Stream Playback Guidance**: Added explicit CLI instructions for VLC (`--rtsp-tcp`) and ffplay (`-rtsp_transport tcp`) requiring TCP transport, documented browser/WebRTC limitations, and added the `--user-app-id` CLI flag override.
+
 ## [0.2.0] - 2026-10-17
 
 ### Added

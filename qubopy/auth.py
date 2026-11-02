@@ -71,6 +71,29 @@ def _decode_jwt_expiry(token: str) -> float | None:
     return None
 
 
+def _format_error_detail(status: int, text: str) -> str:
+    """Format server error response into a human-readable detail string."""
+    try:
+        data = json.loads(text)
+        if isinstance(data, dict):
+            code = data.get("code") or data.get("error")
+            msg = data.get("message") or data.get("errorMessage") or data.get("error_description")
+            if isinstance(msg, list):
+                msg = ", ".join(str(m) for m in msg)
+            if code and msg:
+                return f" (HTTP {status}: {code} - {msg})"
+            if msg:
+                return f" (HTTP {status}: {msg})"
+            if code:
+                return f" (HTTP {status}: {code})"
+    except Exception:
+        pass
+    cleaned = text.strip()
+    if cleaned and len(cleaned) < 120 and "\n" not in cleaned and not cleaned.startswith("<"):
+        return f" (HTTP {status}: {cleaned})"
+    return f" (HTTP {status})"
+
+
 class QuboAuth:
     """Manages credentials, JWT token lifecycle, and session headers."""
 
@@ -191,7 +214,8 @@ class QuboAuth:
                     _LOGGER.debug(
                         "Email login error response (HTTP %s): %s", response.status, text[:200]
                     )
-                    raise QuboAuthError(f"Email login failed (HTTP {response.status})")
+                    detail = _format_error_detail(response.status, text)
+                    raise QuboAuthError(f"Email login failed{detail}")
                 data = json.loads(text)
                 if isinstance(data, list) and data:
                     data = data[0]
@@ -251,7 +275,8 @@ class QuboAuth:
                     _LOGGER.debug(
                         "OTP request error response (HTTP %s): %s", response.status, text[:200]
                     )
-                    raise QuboAuthError(f"OTP request failed (HTTP {response.status})")
+                    detail = _format_error_detail(response.status, text)
+                    raise QuboAuthError(f"OTP request failed{detail}")
                 data = json.loads(text)
                 self._login_uuid = data.get("uuid")
                 return data
@@ -297,7 +322,8 @@ class QuboAuth:
                     _LOGGER.debug(
                         "OTP verification error response (HTTP %s): %s", response.status, text[:200]
                     )
-                    raise QuboAuthError(f"OTP verification failed (HTTP {response.status})")
+                    detail = _format_error_detail(response.status, text)
+                    raise QuboAuthError(f"OTP verification failed{detail}")
                 data = json.loads(text)
                 if isinstance(data, dict):
                     return [data]
@@ -438,13 +464,14 @@ class QuboAuth:
                             response.status,
                             text[:200],
                         )
+                        detail = _format_error_detail(response.status, text)
                         if response.status in (400, 401, 403):
                             self._tokens = None
                             raise QuboAuthError(
-                                f"Session refresh rejected (HTTP {response.status}): "
+                                f"Session refresh rejected{detail}: "
                                 "refresh token expired or invalid; re-login required"
                             )
-                        raise QuboAuthError(f"Session refresh failed (HTTP {response.status})")
+                        raise QuboAuthError(f"Session refresh failed{detail}")
                     data = json.loads(text)
             except aiohttp.ClientError as err:
                 raise QuboConnectionError(f"Network error during token refresh: {err}") from err
