@@ -125,12 +125,12 @@ python -m qubopy --help
 
 > [!IMPORTANT]
 > **Email Account Registration Guidelines & Constraints**:
-> - **Brand-New Email Address Required**: You **cannot** use an email address that was ever previously added or linked to any mobile phone account. It must be an email address that has **never been associated with any Qubo app or account**.
-> - **Phone Number Re-use is Permitted**: When registering a new email account, the Qubo app will still prompt for a phone number for SMS verification during onboarding. You **can** safely provide the exact same mobile phone number that was used for your mobile account. Login will continue to work seamlessly with your email ID and password!
 > - **Account Type Separation**: Qubo strictly routes authentication based on the registration method:
 >   - Accounts created via **email** authenticate using `qubopy login --email <email>` (continuous session with automatic refresh tokens).
 >   - Accounts created via **phone number** authenticate using `qubopy login-phone --phone <number>` (1-hour session without refresh tokens).
->   - Attempting to use email and password credentials on an account registered with a phone number will be rejected by the cloud.
+>   - Attempting to use email and password credentials on an account registered with a phone number will be rejected by Qubo with `HTTP 400: ERR_SM_002 - Invalid user`.
+> - **Reusing an Email Linked to a Phone Account**: If your email address was previously added as a contact field under your phone account, Qubo will reject it during email registration. You can resolve this by removing/deleting the email from your profile in the Qubo mobile app, logging out, and then registering a fresh account using that email address.
+> - **Phone Number Re-use is Permitted**: When registering a new email account, the Qubo app will prompt for a phone number for SMS verification during onboarding. You **can** safely provide the exact same mobile phone number that was used for your mobile account. Login will continue to work seamlessly with your email ID and password.
 
 > [!WARNING]
 > **Mobile App Session Revocation**: When you sign in via `qubopy`, the active session is visible in the official Qubo mobile app under **Account -> Logged In Devices** with the label `Qubopy` (or your custom `--device-name`).
@@ -380,7 +380,16 @@ await camera.stop_stream()
 ```
 
 > [!NOTE]
-> Cloud Wowza URLs are single-consumer sessions. Opening the stream in a media player or restreaming software terminates any active stream session using the same token. Invoke `await camera.stop_stream()` when playback ends to release server-side stream session resources.
+> **Stream Playback & Transport Requirements**:
+> - **VLC / ffplay (TCP Transport Required)**: Qubo's cloud Wowza relay on port 443 requires TCP interleaved transport. VLC defaults to UDP for RTSP, which fails to connect. Pass `--rtsp-tcp` when opening the stream:
+>   ```bash
+>   vlc --rtsp-tcp "<stream_url>"
+>   ffplay -rtsp_transport tcp "<stream_url>"
+>   ```
+> - **Web Browsers**: Browsers and HTML5 video players do not natively support `rtsps://` streams. To view the stream in a browser or dashboard, use a translation proxy like [go2rtc](https://github.com/AlexxIT/go2rtc) or WebRTC.
+> - **Paired Mobile Device Authorization**: The cloud stream manager requires a registered mobile app device ID (`userAppID`) attached to the account. `camera.start_stream()` and `qubopy stream` automatically detect and supply the account's registered mobile device ID, which can also be overridden via `user_app_id`.
+> - **Single-Consumer Sessions**: Cloud Wowza URLs are single-consumer sessions. Opening the stream in another player terminates any active session using the same token. Invoke `await camera.stop_stream()` when playback ends to release server-side resources.
+> - **Video Doorbells (`HCD` series)**: Live video for video doorbells is delivered via local P2P UDP rather than cloud Wowza RTSPS. Use Method 2 below for doorbells.
 
 ##### 2. Local Peer-to-Peer (P2P) UDP Streaming (`camera.initiate_p2p_call()`) (`⚠️ Experimental`)
 
@@ -662,9 +671,13 @@ python -m qubopy tokens --json
 python -m qubopy devices
 python -m qubopy list-devices
 
-# Mint live Wowza RTSPS stream URL for cameras (can open in VLC or go2rtc)
+# Mint live Wowza RTSPS stream URL for cameras (auto-resolves paired mobile userAppID)
 python -m qubopy stream
-python -m qubopy stream --device-id <camera_uuid> --quality high
+python -m qubopy stream --device-id <camera_uuid> --quality high --user-app-id <mobile_id>
+
+# Play the stream in VLC (TCP transport required) or ffplay
+vlc --rtsp-tcp "<rtsps_url>"
+ffplay -rtsp_transport tcp "<rtsps_url>"
 
 # Fetch in-car Wi-Fi AP credentials (SSID and WPA2 password) for dashcam
 python -m qubopy dashcam-wifi
@@ -676,7 +689,9 @@ python -m qubopy export-ble-keys --device-id <lock_uuid>
 # Cloud unlock smart lock via paired in-home gateway
 python -m qubopy unlock --device-id <lock_uuid>
 
-# Enable verbose debug logging for troubleshooting (place -v or --debug before any command)
+# Enable verbose debug logging for troubleshooting (prints server error codes and bodies)
+python -m qubopy --debug login --email <email>
+python -m qubopy --debug stream
 python -m qubopy --debug devices
 ```
 
