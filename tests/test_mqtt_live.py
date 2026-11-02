@@ -63,10 +63,15 @@ class Broker:
             capture_output=True,
         )
 
-        is_root = getattr(os, "geteuid", lambda: -1)() == 0
-        root = "user root\n" if is_root else ""
+        import getpass
+        try:
+            current_user = getpass.getuser()
+            user_line = f"user {current_user}\n"
+        except Exception:
+            user_line = ""
+
         conf_content = (
-            f"{root}listener {self.port} 127.0.0.1\n"
+            f"{user_line}listener {self.port} 127.0.0.1\n"
             f"cafile {ca_path}\n"
             f"certfile {ca_path}\n"
             f"keyfile {key_path}\n"
@@ -74,11 +79,23 @@ class Broker:
             f"password_file {pw_path}\n"
             f"persistence false\n"
         )
-        (tmp_path / "m.conf").write_text(conf_content, encoding="utf-8")
+        conf_file = tmp_path / "m.conf"
+        conf_file.write_text(conf_content, encoding="utf-8")
+        try:
+            os.chmod(tmp_path, 0o777)
+            os.chmod(conf_file, 0o666)
+            os.chmod(ca_path, 0o666)
+            os.chmod(key_path, 0o666)
+        except OSError:
+            pass
 
     def set_password(self, tok: str) -> None:
         pw_path = (self.d / "pw").as_posix()
         subprocess.run(["mosquitto_passwd", "-b", "-c", pw_path, "user1", tok], check=True)
+        try:
+            os.chmod(pw_path, 0o666)
+        except OSError:
+            pass
 
     def start(self) -> None:
         conf_path = (self.d / "m.conf").as_posix()
