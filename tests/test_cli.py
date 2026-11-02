@@ -5,7 +5,7 @@ import base64
 import json
 import logging
 import time
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -324,7 +324,6 @@ def test_cli_debug_flag_configures_logging():
 @pytest.mark.asyncio
 async def test_cmd_stream_instructions(capsys):
     """Verify stream command resolves camera, uses user_app_id, and prints playback instructions."""
-    from unittest.mock import MagicMock
     from qubopy.cli import _cmd_stream
     from qubopy.devices import QuboCamera
     from qubopy.models import DeviceModelInfo, DeviceShadow

@@ -102,7 +102,10 @@ async def test_email_login_server_error_detail():
 
     with (
         patch("aiohttp.ClientSession.post", return_value=mock_resp),
-        pytest.raises(QuboAuthError, match=r"Email login failed \(HTTP 400: ERR_SM_002 - Invalid user\)"),
+        pytest.raises(
+            QuboAuthError,
+            match=r"Email login failed \(HTTP 400: ERR_SM_002 - Invalid user\)",
+        ),
     ):
         await auth.login_with_email("user@example.com", "wrong")
 

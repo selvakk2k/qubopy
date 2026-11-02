@@ -586,8 +586,12 @@ async def _cmd_stream(args: argparse.Namespace) -> int:
             print(f'      vlc --rtsp-tcp "{stream_url}"')
             print(f'      ffplay -rtsp_transport tcp "{stream_url}"')
             print("  - Web Browsers: Browsers do not support RTSP/RTSPS directly.")
-            print("      Use go2rtc, WebRTC proxy, or Home Assistant Generic Camera / WebRTC card.")
-            print("  - Note: Video Doorbells (HCD) stream via local P2P UDP rather than cloud Wowza.")
+            print(
+                "      Use go2rtc, WebRTC proxy, or Home Assistant Generic Camera / WebRTC card."
+            )
+            print(
+                "  - Note: Video Doorbells (HCD) stream via local P2P UDP rather than cloud Wowza."
+            )
             return 0
     except QuboError as err:
         _handle_cli_error(err)
