@@ -84,21 +84,36 @@ class Broker:
         conf_path = (self.d / "m.conf").as_posix()
         self.proc = subprocess.Popen(
             ["mosquitto", "-c", conf_path],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
         )
         for _ in range(50):
+            if self.proc.poll() is not None:
+                stdout, stderr = self.proc.communicate()
+                raise RuntimeError(
+                    f"broker exited early with code {self.proc.returncode}:\n"
+                    f"stderr: {stderr}\nstdout: {stdout}"
+                )
             try:
                 socket.create_connection(("127.0.0.1", self.port), 0.2).close()
                 return
             except OSError:
                 time.sleep(0.1)
-        raise RuntimeError("broker did not start")
+        if self.proc.poll() is not None:
+            stdout, stderr = self.proc.communicate()
+            raise RuntimeError(
+                f"broker did not start (code {self.proc.returncode}):\nstderr: {stderr}"
+            )
+        raise RuntimeError("broker did not start (timed out)")
 
     def stop(self) -> None:
         if self.proc:
             self.proc.terminate()
-            self.proc.wait()
+            try:
+                self.proc.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                self.proc.kill()
 
     def publish(self, tok: str) -> None:
         ca_path = (self.d / "ca.pem").as_posix()
