@@ -389,7 +389,7 @@ await camera.stop_stream()
 > - **Web Browsers**: Browsers and HTML5 video players do not natively support `rtsps://` streams. To view the stream in a browser or dashboard, use a translation proxy like [go2rtc](https://github.com/AlexxIT/go2rtc) or WebRTC.
 > - **Paired Mobile Device Authorization**: The cloud stream manager requires a registered mobile app device ID (`userAppID`) attached to the account. `camera.start_stream()` and `qubopy stream` automatically detect and supply the account's registered mobile device ID, which can also be overridden via `user_app_id`.
 > - **Single-Consumer Sessions**: Cloud Wowza URLs are single-consumer sessions. Opening the stream in another player terminates any active session using the same token. Invoke `await camera.stop_stream()` when playback ends to release server-side resources.
-> - **Video Doorbells (`HCD` series)**: Doorbells support cloud Wowza RTSPS identical to cameras, but operate on a duty cycle—the doorbell stops transmitting video when idle, which causes players to disconnect when there is no active event. For local, continuous, or cloud-independent streaming, an alternative local P2P UDP pathway is also available (see Method 2 below and `ha-qubo`'s go2rtc client).
+> - **Video Doorbells (`HCD` series)**: Doorbells support cloud Wowza RTSPS identical to cameras, but operate on a duty cycle—the doorbell stops transmitting video when idle, which causes players to disconnect when there is no active event. For direct local media transport over P2P UDP, an alternative pathway is also available (see Method 2 below and `ha-qubo`'s go2rtc client), which negotiates initial session signaling via the cloud before streaming media directly over local UDP.
 
 ##### 2. Local Peer-to-Peer (P2P) UDP Streaming (`camera.initiate_p2p_call()`) (`⚠️ Experimental`)
 
@@ -986,6 +986,7 @@ mypy qubopy
 ### Author & Contributors
 * **Architecture & Lead Engineering**: [@selvakk2k](https://github.com/selvakk2k)
 * **Code Implementation & Engineering**: **Antigravity** (Google DeepMind)
+* **Automated Code Review & Auditing**: **CodeRabbit** ([@coderabbitai](https://github.com/coderabbitai))
 * **Code Review & Pre-Release Auditing**: **Claude** (Anthropic)
 
 Licensed under the **MIT License**. See the [LICENSE](LICENSE) file for details.
