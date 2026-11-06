@@ -590,7 +590,7 @@ async def _cmd_stream(args: argparse.Namespace) -> int:
                 "      Use go2rtc, WebRTC proxy, or Home Assistant Generic Camera / WebRTC card."
             )
             print(
-                "  - Note: Video Doorbells (HCD) stream via local P2P UDP rather than cloud Wowza."
+                "  - Note: Video Doorbells (HCD) also support local P2P UDP streaming (see README)."
             )
             return 0
     except QuboError as err:

@@ -389,7 +389,7 @@ await camera.stop_stream()
 > - **Web Browsers**: Browsers and HTML5 video players do not natively support `rtsps://` streams. To view the stream in a browser or dashboard, use a translation proxy like [go2rtc](https://github.com/AlexxIT/go2rtc) or WebRTC.
 > - **Paired Mobile Device Authorization**: The cloud stream manager requires a registered mobile app device ID (`userAppID`) attached to the account. `camera.start_stream()` and `qubopy stream` automatically detect and supply the account's registered mobile device ID, which can also be overridden via `user_app_id`.
 > - **Single-Consumer Sessions**: Cloud Wowza URLs are single-consumer sessions. Opening the stream in another player terminates any active session using the same token. Invoke `await camera.stop_stream()` when playback ends to release server-side resources.
-> - **Video Doorbells (`HCD` series)**: Live video for video doorbells is delivered via local P2P UDP rather than cloud Wowza RTSPS. Use Method 2 below for doorbells.
+> - **Video Doorbells (`HCD` series)**: Doorbells support cloud Wowza RTSPS identical to cameras, but operate on a duty cycle—the doorbell stops transmitting video when idle, which causes players to disconnect when there is no active event. For local, continuous, or cloud-independent streaming, an alternative local P2P UDP pathway is also available (see Method 2 below and `ha-qubo`'s go2rtc client).
 
 ##### 2. Local Peer-to-Peer (P2P) UDP Streaming (`camera.initiate_p2p_call()`) (`⚠️ Experimental`)
 
@@ -671,7 +671,7 @@ python -m qubopy tokens --json
 python -m qubopy devices
 python -m qubopy list-devices
 
-# Mint live Wowza RTSPS stream URL for cameras (auto-resolves paired mobile userAppID)
+# Mint live Wowza RTSPS stream URL for cameras & doorbells (auto-resolves paired mobile userAppID)
 python -m qubopy stream
 python -m qubopy stream --device-id <camera_uuid> --quality high --user-app-id <mobile_id>
 
