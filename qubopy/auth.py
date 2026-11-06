@@ -40,6 +40,8 @@ def _get_or_create_device_id() -> str:
         new_id = str(uuid.uuid4())
         fd = os.open(str(DEVICE_ID_FILE), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         try:
+            if hasattr(os, "fchmod"):
+                os.fchmod(fd, 0o600)
             with open(fd, "w", encoding="utf-8", closefd=True) as f:
                 f.write(new_id)
         except Exception:
@@ -518,7 +520,9 @@ class QuboAuth:
             try:
                 await self.refresh_session()
             except Exception as err:
-                if self._tokens.expires_at <= now:
+                if self._tokens is None or (
+                    self._tokens.expires_at is not None and self._tokens.expires_at <= now
+                ):
                     raise QuboAuthError(
                         f"Session expired and automatic token renewal failed: {err}"
                     ) from err

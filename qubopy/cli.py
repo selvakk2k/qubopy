@@ -9,6 +9,7 @@ import json
 import logging
 import os
 import sys
+import tempfile
 import time
 from pathlib import Path
 from typing import Any
@@ -25,16 +26,25 @@ TOKEN_FILE = Path.home() / ".qubopy_session.json"
 
 
 def _secure_write_text(path: Path, text: str) -> None:
-    """Write text to file with 0o600 permissions."""
-    fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    """Write text atomically to file with 0o600 permissions."""
+    fd, tmp_str = tempfile.mkstemp(dir=str(path.parent), prefix=f".{path.name}.tmp.")
+    temp_path = Path(tmp_str)
     try:
+        if hasattr(os, "fchmod"):
+            os.fchmod(fd, 0o600)
         with open(fd, "w", encoding="utf-8", closefd=True) as f:
             f.write(text)
+        temp_path.replace(path)
     except Exception:
         try:
             os.close(fd)
         except OSError:
             pass
+        if temp_path.exists():
+            try:
+                temp_path.unlink()
+            except OSError:
+                pass
         raise
 
 

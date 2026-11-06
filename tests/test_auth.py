@@ -593,3 +593,26 @@ async def test_refresh_session_rejection_clears_tokens():
         assert auth.tokens is None
 
     await auth.close()
+
+
+@pytest.mark.asyncio
+async def test_get_valid_access_token_near_expiry_cleared_tokens_raises_auth_error():
+    """Verify that when proactive refresh near expiration clears tokens on 401, QuboAuthError is raised cleanly."""
+    auth = QuboAuth()
+    # Token expires in 100 seconds (< 300s window)
+    auth.set_tokens(
+        access_token="old-token",
+        refresh_token="invalid-refresh",
+        user_uuid="user-123",
+        expires_at=time.time() + 100.0,
+    )
+    mock_resp = MockClientResponse(
+        401, json.dumps({"code": "ERR_UNAUTHORIZED", "message": "Invalid token"})
+    )
+    with patch("aiohttp.ClientSession.post", return_value=mock_resp):
+        with pytest.raises(QuboAuthError, match="automatic token renewal failed"):
+            await auth.get_valid_access_token()
+
+    assert auth.is_authenticated is False
+    assert auth.tokens is None
+    await auth.close()
