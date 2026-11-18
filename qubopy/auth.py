@@ -20,6 +20,7 @@ from qubopy.const import (
     DEFAULT_SP_ID,
     PATH_AUTH_REFRESH,
     PATH_LOGIN_EMAIL,
+    PATH_LOGIN_EMAIL_PROFILE,
     PATH_LOGIN_PHONE_REQUEST,
     PATH_LOGIN_PHONE_VERIFY,
 )
@@ -394,6 +395,101 @@ class QuboAuth:
         )
         return self._tokens
 
+    async def finalize_phone_login(
+        self,
+        profile: dict[str, Any],
+        device_attribute: str | None = None,
+    ) -> TokenPayload:
+        """Exchange a phone-OTP session token for one with a long-lived refresh token.
+
+        When logging in via phone OTP, /user/phone/verify returns a short-lived (~1 hour)
+        session token with no refreshToken. For accounts with an email address on file,
+        calling /user/emailprofile/login mints a permanent accessToken and a long-lived
+        (~179 day) refreshToken, matching the official Qubo mobile app behavior.
+
+        Args:
+            profile: Account profile dictionary returned by get_phone_otp_profiles() or
+                verify_phone_otp() (containing 'email', 'uuid'/'userUUID', and 'token').
+            device_attribute: Optional friendly device attribute/label.
+
+        Returns:
+            Updated TokenPayload with both accessToken and refreshToken.
+
+        Raises:
+            QuboAuthError: If tokens/UUID are missing or the account has no email on file.
+            QuboConnectionError: If network communication fails.
+        """
+        temp_token = profile.get("accessToken") or profile.get("token")
+        user_uuid = (
+            profile.get("uuid")
+            or profile.get("userUUID")
+            or profile.get("userId")
+            or (self._tokens.user_uuid if self._tokens else None)
+        )
+        email = profile.get("email")
+
+        if not temp_token and self._tokens:
+            temp_token = self._tokens.access_token
+
+        if not temp_token or not user_uuid:
+            raise QuboAuthError(
+                "Missing tokens or user UUID in OTP profile for session finalization"
+            )
+
+        if not email:
+            raise QuboAuthError(
+                "Qubo account has no email on file. Phone-login session renewal requires an email "
+                "linked to the account profile in the Qubo mobile app."
+            )
+
+        url = f"{self.base_url}{PATH_LOGIN_EMAIL_PROFILE.format(sp=self.sp_id)}"
+        device_id = device_attribute or self.device_id
+        headers = {
+            "Content-Type": "application/json",
+            "Token-Type": "USER",
+            "App-Id": self.app_id,
+            "Source": "Android",
+            "Source-Device-Id": self.device_id,
+            "User-UUID": str(user_uuid),
+            "Subscriber-Key": temp_token,
+        }
+        payload = {"username": email, "deviceAttribute": device_id}
+
+        session = await self._get_session()
+        try:
+            async with session.post(url, json=payload, headers=headers) as response:
+                text = await response.text()
+                if response.status != 200:
+                    _LOGGER.debug(
+                        "Phone-login finalize error response (HTTP %s): %s",
+                        response.status,
+                        text[:200],
+                    )
+                    detail = _format_error_detail(response.status, text)
+                    raise QuboAuthError(f"Phone-login finalize failed{detail}")
+                data = json.loads(text)
+        except aiohttp.ClientError as err:
+            raise QuboConnectionError(f"Network error finalizing phone login: {err}") from err
+        except json.JSONDecodeError as err:
+            raise QuboAuthError(f"Invalid JSON returned by server: {err}") from err
+
+        access_token = data.get("accessToken") or data.get("token")
+        if not access_token:
+            raise QuboAuthError("Missing access token in phone-login finalize response")
+
+        refresh_token = data.get("refreshToken")
+        expires_at = _decode_jwt_expiry(access_token) or (time.time() + 86400)
+        mqtt_password = data.get("mqttPassword")
+
+        self._tokens = TokenPayload(
+            access_token=access_token,
+            refresh_token=refresh_token,
+            user_uuid=str(user_uuid),
+            mqtt_password=mqtt_password,
+            expires_at=expires_at,
+        )
+        return self._tokens
+
     async def verify_phone_otp(
         self,
         phone: str,
@@ -403,11 +499,15 @@ class QuboAuth:
         device_attribute: str = DEFAULT_DEVICE_ATTRIBUTE,
         profile_index: int = 0,
         account_uuid: str | None = None,
+        auto_finalize: bool = True,
     ) -> TokenPayload:
         """Verify received SMS OTP and obtain session tokens.
 
         If multiple account profiles are linked to the phone number, specify
         either `profile_index` (default 0) or `account_uuid` to select the account.
+        When `auto_finalize` is True and the selected profile has an email on file,
+        automatically exchanges the short-lived OTP token for a permanent access
+        token and long-lived refresh token via finalize_phone_login().
         """
         profiles = await self.get_phone_otp_profiles(
             phone=phone,
@@ -416,11 +516,27 @@ class QuboAuth:
             session_uuid=session_uuid,
             device_attribute=device_attribute,
         )
-        return self.select_profile(
+        idx = self.find_profile_index(
+            profiles, profile_index=profile_index, account_uuid=account_uuid
+        )
+        selected_profile = profiles[idx]
+        tokens = self.select_profile(
             profiles,
             profile_index=profile_index,
             account_uuid=account_uuid,
         )
+        if auto_finalize and selected_profile.get("email"):
+            try:
+                tokens = await self.finalize_phone_login(
+                    selected_profile, device_attribute=device_attribute
+                )
+            except Exception as err:
+                _LOGGER.warning(
+                    "Could not auto-finalize phone login to obtain refresh token (%s). "
+                    "Proceeding with OTP access token.",
+                    err,
+                )
+        return tokens
 
     async def refresh_session(self, failed_token: str | None = None) -> TokenPayload:
         """Renew the JWT access token using the stored refresh token."""

@@ -62,7 +62,7 @@ The Qubo smart home ecosystem consists of two distinct communication models:
 | `HCA` | Dashcams | `HCA08B`, Smart Dashcam Pro | In-Car Wi-Fi AP Credentials, Parking Mode, Speed Warning | Cloud REST | `✅ Hardware Verified` |
 | `HLM` / `HLW` | Door Locks | `HLM01`–`HLM10`, `HLR01`, `HLW01` | Remote Unlock, Live State/Battery Query (v2 route: verified via downstream integration), Guest OTP PIN (`⚠️ Route Verified`), Revoke OTP (`⚠️ Experimental`), Offline BLE Key Export | Cloud Gateway / Local BLE | Gateway: `✅ Hardware Verified`<br>BLE / OTP: `⚠️ Experimental` |
 | `HSP` | Smart Plugs | `HSP01` (16A), `HSP02` (10A), `HSP10` | Switch, Voltage, Current, Active Power (W), Energy (kWh) | Cloud REST | `⚠️ API Modeled` |
-| `HPH` | Air Purifiers | `HPH01`–`HPH08` (Q200 to Q1000) | Fan Speed, Auto/Sleep Presets, PM2.5 (MQTT Refresh: `✅ Hardware Verified`), Filter Life, Child Lock | Cloud REST + MQTT | `⚠️ API Modeled` |
+| `HPH` | Air Purifiers | `HPH01`–`HPH08` (Q200 to Q1000) | Fan Speed, Presets (Auto/Sleep/AI Sense), PM2.5, Filter Life, Child Lock | Cloud REST + MQTT | `✅ Hardware Verified` |
 | `HLB` | Smart Lighting | `HLB01`, `HLB10` | State, Brightness, RGB Color, White Temperature | Cloud REST | `⚠️ API Modeled` |
 | `HDS` / `HGS` | Security | `HDS01` (Contact), `HGS01` (Gas), `HSA01` (Smoke) | Binary Alarms, Battery Telemetry | Cloud REST | `⚠️ API Modeled` |
 | `HDT` | Climate | `HDT01` | Temperature (°C), Humidity (%) | Cloud REST | `⚠️ API Modeled` |
@@ -967,6 +967,7 @@ The table below outlines real hardware and automated test verification across co
 | :--- | :--- |
 | MQTT connect, JWT auth, `/monitor/{unit}/#` subscribe, camera events | Tested on a real Qubo camera |
 | Air purifier MQTT commands (`aqiRefresh` on Q200) | Tested on a real Q200 air purifier by @darkknight001 |
+| Air purifier REST shadow controls & state telemetry (Q400) | Tested on a real Q400 air purifier by @piyushparkash |
 | Reconnect after a dropped connection, token refresh on reconnect, stop on rejected credentials | Tested against a local Mosquitto broker (automated, `tests/test_mqtt_live.py`) |
 | Lock events (`lockControl` / `stateChanged`) | **Not tested**: envelope inferred from the app and from camera events; no lock available |
 | Whether the real Qubo broker drops an existing connection when the 1-hour phone-OTP token expires | **Not tested** |
@@ -1006,6 +1007,8 @@ mypy qubopy
 * **Code Implementation & Engineering**: **Antigravity** (Google DeepMind)
 * **Automated Code Review & Auditing**: **CodeRabbit** ([@coderabbitai](https://github.com/coderabbitai))
 * **Code Review & Pre-Release Auditing**: **Claude** (Anthropic)
-* **Community Contributions**: [@darkknight001](https://github.com/darkknight001) — MQTT service command dispatch and Q200 air purifier hardware testing.
+* **Community Contributions**:
+  * [@piyushparkash](https://github.com/piyushparkash) ([ha-qubo](https://github.com/piyushparkash/ha-qubo)) — Q400 air purifier reverse engineering (shadow attribute command shapes, state key mappings) and phone OTP refresh token exchange (`finalize_phone_login`).
+  * [@darkknight001](https://github.com/darkknight001) — MQTT service command dispatch and Q200 air purifier hardware testing.
 
 Licensed under the **MIT License**. See the [LICENSE](LICENSE) file for details.

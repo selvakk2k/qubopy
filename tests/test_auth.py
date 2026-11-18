@@ -618,3 +618,53 @@ async def test_get_valid_access_token_near_expiry_cleared_tokens_raises_auth_err
     assert auth.is_authenticated is False
     assert auth.tokens is None
     await auth.close()
+
+
+@pytest.mark.asyncio
+async def test_finalize_phone_login_success():
+    """Verify finalize_phone_login exchanges OTP token for a permanent refresh token."""
+    auth = QuboAuth(device_id="test-device-uuid")
+    profile = {
+        "token": "temp-otp-token-123",
+        "uuid": "user-999",
+        "email": "user@example.com",
+    }
+    finalize_response = {
+        "accessToken": "permanent-access-token-456",
+        "refreshToken": "long-lived-refresh-token-789",
+        "mqttPassword": "mqtt-password-abc",
+    }
+    mock_resp = MockClientResponse(200, json.dumps(finalize_response))
+    with patch("aiohttp.ClientSession.post", return_value=mock_resp) as mock_post:
+        tokens = await auth.finalize_phone_login(profile)
+        assert tokens.access_token == "permanent-access-token-456"
+        assert tokens.refresh_token == "long-lived-refresh-token-789"
+        assert tokens.user_uuid == "user-999"
+        assert tokens.mqtt_password == "mqtt-password-abc"
+
+        _, kwargs = mock_post.call_args
+        assert kwargs["headers"]["Subscriber-Key"] == "temp-otp-token-123"
+        assert kwargs["headers"]["User-UUID"] == "user-999"
+        assert kwargs["json"]["username"] == "user@example.com"
+        assert kwargs["json"]["deviceAttribute"] == "test-device-uuid"
+
+    await auth.close()
+
+
+@pytest.mark.asyncio
+async def test_finalize_phone_login_missing_email():
+    """Verify finalize_phone_login raises QuboAuthError when profile has no email."""
+    auth = QuboAuth()
+    profile = {"token": "temp-token", "uuid": "user-123"}
+    with pytest.raises(QuboAuthError, match="no email on file"):
+        await auth.finalize_phone_login(profile)
+    await auth.close()
+
+
+@pytest.mark.asyncio
+async def test_finalize_phone_login_missing_tokens():
+    """Verify finalize_phone_login raises QuboAuthError when token or uuid missing."""
+    auth = QuboAuth()
+    with pytest.raises(QuboAuthError, match="Missing tokens or user UUID"):
+        await auth.finalize_phone_login({"email": "user@example.com"})
+    await auth.close()

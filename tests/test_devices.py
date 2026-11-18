@@ -75,6 +75,130 @@ def test_purifier_telemetry(sample_client):
     assert purifier.is_child_lock_on is False
 
 
+def test_purifier_hardware_verified_telemetry(sample_client):
+    """Test QuboAirPurifier with hardware-verified <service>_<attribute> shadow keys."""
+    info = DeviceModelInfo(
+        uuid="purifier-q400",
+        deviceId="purifier-q400",
+        name="Q400 Air Purifier",
+        model="HPH04",
+        type="AirPurifier",
+    )
+    shadow = DeviceShadow(
+        device_uuid="purifier-q400",
+        reported={
+            "lcSwitchControl_power": "on",
+            "fanSpeedControl_speed": "3",
+            "fanControlMode_state": "qsense",
+            "aqiStatus_PM25": 42,
+            "filterReset_percentage": 95,
+            "childLockControl_state": "enable",
+        },
+    )
+    purifier = QuboAirPurifier(info, sample_client, shadow)
+
+    assert purifier.is_on is True
+    assert purifier.fan_speed == 3
+    assert purifier.mode == "qsense"
+    assert purifier.pm25 == 42
+    assert purifier.filter_life_percent == 95
+    assert purifier.is_child_lock_on is True
+
+
+@pytest.mark.asyncio
+async def test_purifier_shadow_attribute_controls(sample_client):
+    """Verify turn_on/off, fan speed, mode, and child lock dispatch update_attribute."""
+    info = DeviceModelInfo(
+        uuid="purifier-q400",
+        deviceId="purifier-q400",
+        name="Q400 Air Purifier",
+        model="HPH04",
+        type="AirPurifier",
+        unit_uuid="unit-123",
+        entity_uuid="entity-456",
+    )
+    purifier = QuboAirPurifier(info, sample_client)
+    sample_client.update_shadow_attribute = AsyncMock(return_value={"status": "OK"})
+
+    await purifier.turn_on()
+    sample_client.update_shadow_attribute.assert_called_with(
+        unit_uuid="unit-123",
+        entity_uuid="entity-456",
+        device_uuid="purifier-q400",
+        attributes={
+            "instanceId": 0,
+            "serviceName": "lcSwitchControl",
+            "attributeName": "power",
+            "attributeValue": "on",
+        },
+    )
+
+    await purifier.turn_off()
+    sample_client.update_shadow_attribute.assert_called_with(
+        unit_uuid="unit-123",
+        entity_uuid="entity-456",
+        device_uuid="purifier-q400",
+        attributes={
+            "instanceId": 0,
+            "serviceName": "lcSwitchControl",
+            "attributeName": "power",
+            "attributeValue": "off",
+        },
+    )
+
+    await purifier.set_fan_speed(2)
+    sample_client.update_shadow_attribute.assert_called_with(
+        unit_uuid="unit-123",
+        entity_uuid="entity-456",
+        device_uuid="purifier-q400",
+        attributes={
+            "instanceId": 0,
+            "serviceName": "fanSpeedControl",
+            "attributeName": "speed",
+            "attributeValue": "2",
+        },
+    )
+
+    await purifier.set_mode("auto")
+    sample_client.update_shadow_attribute.assert_called_with(
+        unit_uuid="unit-123",
+        entity_uuid="entity-456",
+        device_uuid="purifier-q400",
+        attributes={
+            "instanceId": 0,
+            "serviceName": "fanControlMode",
+            "attributeName": "state",
+            "attributeValue": "auto",
+        },
+    )
+
+    await purifier.set_child_lock(True)
+    sample_client.update_shadow_attribute.assert_called_with(
+        unit_uuid="unit-123",
+        entity_uuid="entity-456",
+        device_uuid="purifier-q400",
+        attributes={
+            "instanceId": 0,
+            "serviceName": "childLockControl",
+            "attributeName": "state",
+            "attributeValue": "enable",
+        },
+    )
+
+    await purifier.set_child_lock(False)
+    sample_client.update_shadow_attribute.assert_called_with(
+        unit_uuid="unit-123",
+        entity_uuid="entity-456",
+        device_uuid="purifier-q400",
+        attributes={
+            "instanceId": 0,
+            "serviceName": "childLockControl",
+            "attributeName": "state",
+            "attributeValue": "disable",
+        },
+    )
+
+
 def test_light_color_and_brightness(sample_client):
     """Test QuboLight RGB and dimming controls."""
     info = DeviceModelInfo(

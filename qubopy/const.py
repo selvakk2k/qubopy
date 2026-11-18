@@ -22,6 +22,7 @@ STUN_SERVER_PORT: int = 5349
 PATH_LOGIN_EMAIL: str = "/sms/api/v1/sp/{sp}/user/login?system=CS"
 PATH_LOGIN_PHONE_REQUEST: str = "/sms/api/v1/sp/{sp}/user/phone/login"
 PATH_LOGIN_PHONE_VERIFY: str = "/sms/api/v1/sp/{sp}/user/phone/verify"
+PATH_LOGIN_EMAIL_PROFILE: str = "/sms/api/v1/sp/{sp}/user/emailprofile/login"
 PATH_AUTH_REFRESH: str = "/sms/api/v1/sp/{sp}/users/{user_uuid}/auth/refresh"
 
 # Discovery & Hierarchy Paths
