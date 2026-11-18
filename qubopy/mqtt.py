@@ -329,7 +329,11 @@ class QuboMqttListener:
 
         _LOGGER.debug("Published %s.%s to %s", service, command, topic)
 
-    async def start(self, connect_timeout: float = 15.0) -> None:
+    async def start(
+        self,
+        connect_timeout: float = 15.0,
+        ssl_context: ssl.SSLContext | None = None,
+    ) -> None:
         """Connect to the Qubo MQTT broker and wait for CONNACK validation.
 
         Note:
@@ -339,6 +343,9 @@ class QuboMqttListener:
         Args:
             connect_timeout: Seconds to wait for broker CONNACK before raising
                 QuboConnectionError.
+            ssl_context: Optional pre-configured SSL context. If omitted, an SSL context
+                is created asynchronously off the event loop via an executor to prevent blocking
+                file/trust-store I/O on Home Assistant or async runtimes.
         """
         if self._is_running:
             return
@@ -412,7 +419,9 @@ class QuboMqttListener:
 
         mqttc.suppress_exceptions = True
         mqttc.username_pw_set(username=user_uuid, password=token)
-        mqttc.tls_set_context(ssl.create_default_context())
+        if ssl_context is None:
+            ssl_context = await loop.run_in_executor(None, ssl.create_default_context)
+        mqttc.tls_set_context(ssl_context)
 
         self._connect_future = loop.create_future()
 

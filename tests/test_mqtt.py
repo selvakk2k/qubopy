@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import ssl
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -1031,3 +1032,57 @@ async def test_mqtt_publish_service_command_delays_and_stop() -> None:
 
         with pytest.raises(QuboConnectionError, match="timed out"):
             await pub_task
+
+
+@pytest.mark.asyncio
+async def test_mqtt_start_ssl_context_handling() -> None:
+    """Verifies SSL context is loaded via executor off-loop by default or passed explicitly."""
+    auth = QuboAuth()
+    auth._tokens = TokenPayload(access_token="jwt", user_uuid="user-1")
+    auth.get_valid_access_token = AsyncMock(return_value="jwt")  # type: ignore[method-assign]
+
+    loop = asyncio.get_running_loop()
+    orig_run_in_executor = loop.run_in_executor
+
+    # Test 1: Default (off-loop executor creation)
+    listener = QuboMqttListener(auth, unit_uuid="unit-abc")
+    mock_mqtt_client = _create_mock_mqtt_client(on_connect_rc=0)
+    fake_default_ctx = MagicMock(spec=ssl.SSLContext)
+    ssl_executor_calls: list[tuple[Any, Any]] = []
+
+    async def spy_run_in_executor(executor: Any, func: Any, *args: Any) -> Any:
+        if func is ssl.create_default_context:
+            ssl_executor_calls.append((executor, func))
+            return fake_default_ctx
+        return await orig_run_in_executor(executor, func, *args)
+
+    with (
+        patch("paho.mqtt.client.Client", return_value=mock_mqtt_client),
+        patch.object(loop, "run_in_executor", side_effect=spy_run_in_executor),
+    ):
+        await listener.start()
+        assert len(ssl_executor_calls) == 1
+        assert ssl_executor_calls[0] == (None, ssl.create_default_context)
+        mock_mqtt_client.tls_set_context.assert_called_once_with(fake_default_ctx)
+        await listener.stop()
+
+    # Test 2: Custom SSLContext passed explicitly
+    listener_custom = QuboMqttListener(auth, unit_uuid="unit-abc")
+    mock_mqtt_custom = _create_mock_mqtt_client(on_connect_rc=0)
+    custom_ctx = MagicMock(spec=ssl.SSLContext)
+    ssl_custom_calls: list[tuple[Any, Any]] = []
+
+    async def spy_custom_run_in_executor(executor: Any, func: Any, *args: Any) -> Any:
+        if func is ssl.create_default_context:
+            ssl_custom_calls.append((executor, func))
+            return fake_default_ctx
+        return await orig_run_in_executor(executor, func, *args)
+
+    with (
+        patch("paho.mqtt.client.Client", return_value=mock_mqtt_custom),
+        patch.object(loop, "run_in_executor", side_effect=spy_custom_run_in_executor),
+    ):
+        await listener_custom.start(ssl_context=custom_ctx)
+        assert len(ssl_custom_calls) == 0
+        mock_mqtt_custom.tls_set_context.assert_called_once_with(custom_ctx)
+        await listener_custom.stop()

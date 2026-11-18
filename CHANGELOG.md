@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.2] - 2026-11-18
+
+### Fixed
+- **Off-Loop SSL Context Creation**: Updated `QuboMqttListener.start()` to construct default SSL contexts asynchronously off the event loop via `loop.run_in_executor(None, ssl.create_default_context)` when not provided, preventing synchronous trust-store I/O (`load_default_certs`) from blocking async event loops in Home Assistant. Added optional `ssl_context` parameter to `start()` allowing callers to inject a pre-configured SSL context directly.
+
 ## [0.3.1] - 2026-11-18
 
 ### Added
