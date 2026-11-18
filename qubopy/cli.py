@@ -21,8 +21,10 @@ from qubopy.devices.camera import QuboCamera
 from qubopy.devices.dashcam import QuboDashcam
 from qubopy.devices.lock import QuboLock
 from qubopy.exceptions import QuboError
+from qubopy.models import TokenPayload
 
 TOKEN_FILE = Path.home() / ".qubopy_session.json"
+_LOGGER = logging.getLogger(__name__)
 
 
 def _secure_write_text(path: Path, text: str) -> None:
@@ -287,10 +289,23 @@ async def _cmd_login_phone(args: argparse.Namespace) -> int:
                         selected_idx = int(choice)
 
                 chosen_idx = auth.find_profile_index(profiles, profile_index=selected_idx)
+                selected_profile = profiles[chosen_idx]
                 tokens = auth.select_profile(
                     profiles,
                     profile_index=chosen_idx,
                 )
+                if hasattr(auth, "finalize_phone_login"):
+                    try:
+                        res = auth.finalize_phone_login(
+                            selected_profile, device_attribute=device_name
+                        )
+                        if asyncio.iscoroutine(res) or hasattr(res, "__await__"):
+                            tokens = await res
+                        elif isinstance(res, TokenPayload):
+                            tokens = res
+                    except Exception as finalize_err:
+                        _LOGGER.debug("Could not finalize phone login session: %s", finalize_err)
+
                 print("Phone authentication successful.")
                 print(f"User UUID: {tokens.user_uuid}")
                 session_dict = {
@@ -298,12 +313,8 @@ async def _cmd_login_phone(args: argparse.Namespace) -> int:
                     "refreshToken": tokens.refresh_token,
                     "uuid": tokens.user_uuid,
                 }
-                if (
-                    isinstance(chosen_idx, int)
-                    and 0 <= chosen_idx < len(profiles)
-                    and profiles[chosen_idx].get("email")
-                ):
-                    session_dict["email"] = profiles[chosen_idx]["email"]
+                if selected_profile.get("email"):
+                    session_dict["email"] = selected_profile["email"]
                 _save_session(session_dict)
                 try:
                     SESSION_TEMP_FILE.unlink(missing_ok=True)
@@ -386,10 +397,23 @@ async def _cmd_verify_otp(args: argparse.Namespace) -> int:
         chosen_idx = auth.find_profile_index(
             profiles, profile_index=selected_idx, account_uuid=account_uuid
         )
+        selected_profile = profiles[chosen_idx]
         tokens = auth.select_profile(
             profiles,
             profile_index=chosen_idx,
         )
+        if hasattr(auth, "finalize_phone_login"):
+            try:
+                res = auth.finalize_phone_login(
+                    selected_profile, device_attribute=device_name
+                )
+                if asyncio.iscoroutine(res) or hasattr(res, "__await__"):
+                    tokens = await res
+                elif isinstance(res, TokenPayload):
+                    tokens = res
+            except Exception as finalize_err:
+                _LOGGER.debug("Could not finalize phone login session: %s", finalize_err)
+
         print("Phone authentication successful.")
         print(f"User UUID: {tokens.user_uuid}")
         session_dict = {
@@ -397,12 +421,8 @@ async def _cmd_verify_otp(args: argparse.Namespace) -> int:
             "refreshToken": tokens.refresh_token,
             "uuid": tokens.user_uuid,
         }
-        if (
-            isinstance(chosen_idx, int)
-            and 0 <= chosen_idx < len(profiles)
-            and profiles[chosen_idx].get("email")
-        ):
-            session_dict["email"] = profiles[chosen_idx]["email"]
+        if selected_profile.get("email"):
+            session_dict["email"] = selected_profile["email"]
         _save_session(session_dict)
         try:
             SESSION_TEMP_FILE.unlink(missing_ok=True)

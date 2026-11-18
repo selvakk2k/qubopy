@@ -56,7 +56,7 @@ The Qubo smart home ecosystem consists of two distinct communication models:
 
 | Series | Category | Example Models | Functions & Sensors | Integration Mode | Status |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Auth** | Cloud Session | N/A | Email + Password, Phone SMS OTP | Cloud REST (`/user/login?system=CS`, `/phone/verify`) | `✅ Hardware Verified` |
+| **Auth** | Cloud Session | N/A | Email + Password, Phone SMS OTP | Cloud REST (`/user/login?system=CS`, `/phone/verify`, `/user/emailprofile/login`) | `✅ Hardware Verified` |
 | `HCP` / `HCO` | Cameras | `HCP01`–`HCP19`, `HCO04`–`HCO07` | Cloud RTSPS Live Stream (Start: `✅ Hardware Verified` / Stop: `⚠️ Route Verified`), Privacy Mask, Siren, Motion Status, Storage Diagnostics | Cloud REST + Local RTSP / P2P | `✅ Hardware Verified` |
 | `HCD` | Doorbells | `HCD01`, `HCD04` | Ring Event, Chime, RTSP Stream / LAN P2P | Cloud REST + Local RTSP / P2P | `✅ Hardware Verified` |
 | `HCA` | Dashcams | `HCA08B`, Smart Dashcam Pro | In-Car Wi-Fi AP Credentials, Parking Mode, Speed Warning | Cloud REST | `✅ Hardware Verified` |
@@ -109,29 +109,28 @@ python -m qubopy --help
 
 ## Authentication & Account Guidelines
 
-`qubopy` supports two distinct authentication pathways provided by Qubo cloud services:
+`qubopy` supports two authentication pathways provided by Qubo cloud services, both yielding continuous sessions with automatic token refresh:
 
-### 1. Email and Password (Continuous Session with Refresh Tokens)
+### 1. Email and Password (Continuous Session)
 * **Session Lifecycle**: Continuous. Qubo returns an `accessToken` (1 hour validity; `exp: 3600s`) along with a server-issued `refreshToken` (180 days / 6 months validity; `exp: 15552000s`).
 * **Automatic Renewal**: `qubopy` proactively refreshes the access token before expiration using `POST /auth/refresh`, preserving the static 180-day refresh token across renews. Observed on an email account over 3 consecutive hourly refresh cycles without token rotation, backed by an invalidation guard on HTTP 400/401/403.
-* **Target Use Case**: Recommended for permanent Home Assistant integrations and continuous 24/7 cloud polling.
+* **Target Use Case**: Recommended for unattended background polling in Home Assistant and automated scripts for email-registered accounts.
 
-### 2. Phone Number and SMS OTP (1-Hour Session / Provisioning Extractor)
-* **Session Lifecycle**: Exactly 1 hour (`exp: 3600s`). Qubo cloud endpoints do not issue a `refreshToken` over the phone verification route.
-* **Account Linkage & Multi-Account Selection**: A single phone number can have multiple profile accounts attached. `qubopy` detects multiple profiles and allows interactive selection or targeted selection via `--profile-index` or `--account-uuid`.
-* **Target Use Case**: Designed as a **local credential and provisioning extractor**:
+### 2. Phone Number and SMS OTP (Continuous Session)
+* **Session Lifecycle**: Continuous. Upon verifying the SMS OTP (`/phone/verify`), `qubopy` automatically exchanges the temporary verification token via profile login (`/sms/api/v1/sp/{sp}/user/emailprofile/login`) to mint an `accessToken` (1 hour validity) and a long-lived `refreshToken` (~180 days validity), matching the official Qubo mobile app workflow.
+* **Account Linkage & Multi-Account Selection**: If a phone number is linked to multiple account profiles, `qubopy` prompts for interactive profile selection (or accepts `--profile-index` / `--account-uuid`). If only one profile is associated, it is selected automatically.
+* **Continuous Automation**: Because phone OTP logins establish full continuous sessions with refresh tokens, phone-registered accounts can be used seamlessly in Home Assistant and background daemons without recurring SMS prompts.
+* **Provisioning & Local Extractor**:
   * Extracting offline BLE smart lock keys via `qubopy export-ble-keys` for 100% local ESPHome/BLE control without cloud dependence.
   * Exporting in-car Wi-Fi AP SSID and passwords via `qubopy dashcam-wifi` for direct dashcam connectivity.
-  * Initial device discovery and stream testing.
-* **Switching to Email for 24/7 Automation**: Accounts originally created via mobile phone in the Qubo mobile app are marked with `accountType: "MOBILE"`. If you require automated 24/7 cloud polling in Home Assistant without hourly SMS re-authentication, register a separate email-based Qubo account.
+  * Device discovery and live stream testing.
 
 > [!IMPORTANT]
-> **Email Account Registration Guidelines & Constraints**:
+> **Account Credential Routing Guidelines**:
 > - **Account Type Separation**: Qubo strictly routes authentication based on the registration method:
 >   - Accounts created via **email** authenticate using `qubopy login --email <email>` (continuous session with automatic refresh tokens).
->   - Accounts created via **phone number** authenticate using `qubopy login-phone --phone <number>` (1-hour session without refresh tokens).
->   - Attempting to use email and password credentials on an account registered with a phone number will be rejected by Qubo with `HTTP 400: ERR_SM_002 - Invalid user`.
-> - **Reusing an Email Linked to a Phone Account**: If your email address was previously added as a contact field under your phone account, Qubo will reject it during email registration. You can resolve this by removing/deleting the email from your profile in the Qubo mobile app, logging out, and then registering a fresh account using that email address.
+>   - Accounts created via **phone number** authenticate using `qubopy login-phone --phone <number>` and `qubopy verify-otp`.
+>   - Attempting to use email and password credentials on an account registered strictly with a phone number will be rejected by Qubo with `HTTP 400: ERR_SM_002 - Invalid user`.
 > - **Phone Number Re-use is Permitted**: When registering a new email account, the Qubo app will prompt for a phone number for SMS verification during onboarding. You **can** safely provide the exact same mobile phone number that was used for your mobile account. Login will continue to work seamlessly with your email ID and password.
 
 > [!WARNING]

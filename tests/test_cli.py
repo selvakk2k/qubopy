@@ -94,6 +94,107 @@ async def test_cmd_login_phone_single_verify_call(monkeypatch):
             )
 
 
+@pytest.mark.asyncio
+async def test_cmd_login_phone_finalizes_refresh_token(monkeypatch):
+    """Verify phone login auto-finalizes session to obtain and save refresh token."""
+    from qubopy.cli import _cmd_login_phone
+
+    args = argparse.Namespace(
+        phone="9876543210",
+        isd="+91",
+        device_name="TestDevice",
+    )
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+    inputs = iter(["123456", "0"])
+    monkeypatch.setattr("builtins.input", lambda prompt="": next(inputs))
+
+    with patch("qubopy.cli.QuboAuth") as mock_auth_cls:
+        mock_auth = mock_auth_cls.return_value
+        mock_auth.request_phone_otp = AsyncMock(return_value={"uuid": "sess-123"})
+        mock_auth.get_phone_otp_profiles = AsyncMock(
+            return_value=[
+                {"name": "Profile0", "uuid": "u-0", "email": "p0@test.com"},
+            ]
+        )
+        mock_auth.find_profile_index = QuboAuth.find_profile_index
+        mock_auth.select_profile.return_value = TokenPayload(
+            accessToken="temp-token",
+            refreshToken=None,
+            uuid="u-0",
+        )
+        mock_auth.finalize_phone_login = AsyncMock(
+            return_value=TokenPayload(
+                accessToken="permanent-token",
+                refreshToken="long-lived-refresh-token",
+                uuid="u-0",
+            )
+        )
+        mock_auth.close = AsyncMock()
+
+        with patch("qubopy.cli._save_session") as mock_save:
+            code = await _cmd_login_phone(args)
+            assert code == 0
+            mock_auth.finalize_phone_login.assert_awaited_once()
+            mock_save.assert_called_once_with(
+                {
+                    "accessToken": "permanent-token",
+                    "refreshToken": "long-lived-refresh-token",
+                    "uuid": "u-0",
+                    "email": "p0@test.com",
+                }
+            )
+
+
+@pytest.mark.asyncio
+async def test_cmd_login_phone_finalizes_without_email(monkeypatch):
+    """Verify phone login auto-finalizes even when profile has no email."""
+    from qubopy.cli import _cmd_login_phone
+
+    args = argparse.Namespace(
+        phone="9876543210",
+        isd="+91",
+        device_name="TestDevice",
+    )
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+    inputs = iter(["123456", "0"])
+    monkeypatch.setattr("builtins.input", lambda prompt="": next(inputs))
+
+    with patch("qubopy.cli.QuboAuth") as mock_auth_cls:
+        mock_auth = mock_auth_cls.return_value
+        mock_auth.request_phone_otp = AsyncMock(return_value={"uuid": "sess-123"})
+        mock_auth.get_phone_otp_profiles = AsyncMock(
+            return_value=[
+                {"name": "ProfileNoEmail", "uuid": "u-1", "phone": "+919876543210"},
+            ]
+        )
+        mock_auth.find_profile_index = QuboAuth.find_profile_index
+        mock_auth.select_profile.return_value = TokenPayload(
+            accessToken="temp-token",
+            refreshToken=None,
+            uuid="u-1",
+        )
+        mock_auth.finalize_phone_login = AsyncMock(
+            return_value=TokenPayload(
+                accessToken="permanent-token",
+                refreshToken="long-lived-refresh-token",
+                uuid="u-1",
+            )
+        )
+        mock_auth.close = AsyncMock()
+
+        with patch("qubopy.cli._save_session") as mock_save:
+            code = await _cmd_login_phone(args)
+            assert code == 0
+            mock_auth.finalize_phone_login.assert_awaited_once()
+            mock_save.assert_called_once_with(
+                {
+                    "accessToken": "permanent-token",
+                    "refreshToken": "long-lived-refresh-token",
+                    "uuid": "u-1",
+                }
+            )
+
+
 def test_models_repr_conceals_secrets():
     """Verify that credentials and secret keys are hidden from model repr."""
     tokens = TokenPayload(

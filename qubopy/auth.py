@@ -403,20 +403,20 @@ class QuboAuth:
         """Exchange a phone-OTP session token for one with a long-lived refresh token.
 
         When logging in via phone OTP, /user/phone/verify returns a short-lived (~1 hour)
-        session token with no refreshToken. For accounts with an email address on file,
-        calling /user/emailprofile/login mints a permanent accessToken and a long-lived
-        (~179 day) refreshToken, matching the official Qubo mobile app behavior.
+        session token with no refreshToken. Calling /user/emailprofile/login mints an
+        accessToken and a long-lived (~179 day) refreshToken, matching the official Qubo
+        mobile app behavior.
 
         Args:
             profile: Account profile dictionary returned by get_phone_otp_profiles() or
-                verify_phone_otp() (containing 'email', 'uuid'/'userUUID', and 'token').
+                verify_phone_otp() (containing 'email'/'username'/'phone', 'uuid', and 'token').
             device_attribute: Optional friendly device attribute/label.
 
         Returns:
             Updated TokenPayload with both accessToken and refreshToken.
 
         Raises:
-            QuboAuthError: If tokens/UUID are missing or the account has no email on file.
+            QuboAuthError: If tokens/UUID or account identifiers are missing.
             QuboConnectionError: If network communication fails.
         """
         temp_token = profile.get("accessToken") or profile.get("token")
@@ -426,7 +426,12 @@ class QuboAuth:
             or profile.get("userId")
             or (self._tokens.user_uuid if self._tokens else None)
         )
-        email = profile.get("email")
+        identifier = (
+            profile.get("email")
+            or profile.get("username")
+            or profile.get("phone")
+            or ""
+        )
 
         if not temp_token and self._tokens:
             temp_token = self._tokens.access_token
@@ -436,10 +441,10 @@ class QuboAuth:
                 "Missing tokens or user UUID in OTP profile for session finalization"
             )
 
-        if not email:
+        if not identifier:
             raise QuboAuthError(
-                "Qubo account has no email on file. Phone-login session renewal requires an email "
-                "linked to the account profile in the Qubo mobile app."
+                "Missing account identifier (email, username, or phone) in OTP profile "
+                "for session finalization"
             )
 
         url = f"{self.base_url}{PATH_LOGIN_EMAIL_PROFILE.format(sp=self.sp_id)}"
@@ -453,7 +458,7 @@ class QuboAuth:
             "User-UUID": str(user_uuid),
             "Subscriber-Key": temp_token,
         }
-        payload = {"username": email, "deviceAttribute": device_id}
+        payload = {"username": identifier, "deviceAttribute": device_id}
 
         session = await self._get_session()
         try:

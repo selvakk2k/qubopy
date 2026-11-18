@@ -652,11 +652,34 @@ async def test_finalize_phone_login_success():
 
 
 @pytest.mark.asyncio
-async def test_finalize_phone_login_missing_email():
-    """Verify finalize_phone_login raises QuboAuthError when profile has no email."""
+async def test_finalize_phone_login_fallback_identifier():
+    """Verify finalize_phone_login falls back to phone/username if email is absent."""
+    auth = QuboAuth(device_id="test-device-uuid")
+    profile = {
+        "token": "temp-otp-token-123",
+        "uuid": "user-999",
+        "phone": "+919876543210",
+    }
+    finalize_response = {
+        "accessToken": "permanent-access-token-456",
+        "refreshToken": "long-lived-refresh-token-789",
+    }
+    mock_resp = MockClientResponse(200, json.dumps(finalize_response))
+    with patch("aiohttp.ClientSession.post", return_value=mock_resp) as mock_post:
+        tokens = await auth.finalize_phone_login(profile)
+        assert tokens.access_token == "permanent-access-token-456"
+        _, kwargs = mock_post.call_args
+        assert kwargs["json"]["username"] == "+919876543210"
+
+    await auth.close()
+
+
+@pytest.mark.asyncio
+async def test_finalize_phone_login_missing_identifier():
+    """Verify finalize_phone_login raises QuboAuthError when profile lacks identifier."""
     auth = QuboAuth()
     profile = {"token": "temp-token", "uuid": "user-123"}
-    with pytest.raises(QuboAuthError, match="no email on file"):
+    with pytest.raises(QuboAuthError, match="Missing account identifier"):
         await auth.finalize_phone_login(profile)
     await auth.close()
 

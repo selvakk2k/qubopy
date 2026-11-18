@@ -5,11 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.3.1] - 2026-11-18
 
 ### Added
 - **Air Purifier Shadow Controls & Telemetry**: Refactored `QuboAirPurifier` control methods (`turn_on`, `turn_off`, `set_fan_speed`, `set_mode`, `set_child_lock`) to dispatch `update_attribute()` to `/devices/{device_id}/shadow/attribute` with `{instanceId: 0, serviceName, attributeName, attributeValue}`, and updated state properties (`is_on`, `fan_speed`, `mode`, `pm25`, `filter_life_percent`, `is_child_lock_on`) to read verified `<serviceName>_<attributeName>` shadow keys (including `qsense` AI Sense preset).
-- **Phone OTP Session Finalization**: Added `QuboAuth.finalize_phone_login()` to exchange short-lived (~1hr) OTP session tokens for permanent access tokens and long-lived (~179 day) refresh tokens via `/sms/api/v1/sp/{sp}/user/emailprofile/login`, matching the official mobile app.
+- **Phone OTP Session Finalization**: Added `QuboAuth.finalize_phone_login()` to exchange short-lived (~1hr) OTP session tokens for permanent access tokens and long-lived (~179 day) refresh tokens via `/sms/api/v1/sp/{sp}/user/emailprofile/login`, matching the official mobile app. Supports accounts with email, username, or phone identifiers.
+- **CLI Refresh Token Auto-Finalization**: Updated `qubopy login-phone` and `qubopy verify-otp` to automatically finalize phone sessions, persisting continuous tokens to `~/.qubopy_session.json` and reporting continuous session status in `qubopy tokens`.
 
 ## [0.3.0] - 2026-11-18
 
