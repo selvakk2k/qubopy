@@ -942,3 +942,92 @@ async def test_mqtt_publish_service_command_broker_rejection() -> None:
                 command="refresh",
             )
         await listener.stop()
+
+
+@pytest.mark.asyncio
+async def test_mqtt_publish_service_command_client_disconnected() -> None:
+    """Publishing when the MQTT client is disconnected raises QuboConnectionError."""
+    auth = QuboAuth()
+    auth._tokens = TokenPayload(access_token="jwt", user_uuid="user-1")
+    auth.get_valid_access_token = AsyncMock(return_value="jwt")  # type: ignore[method-assign]
+
+    listener = QuboMqttListener(auth, unit_uuid="unit-abc")
+
+    mock_mqtt_client = _create_mock_mqtt_client(on_connect_rc=0)
+    mock_mqtt_client.is_connected.return_value = False
+    with patch("paho.mqtt.client.Client", return_value=mock_mqtt_client):
+        await listener.start()
+        with pytest.raises(QuboConnectionError, match="disconnected"):
+            await listener.publish_service_command(
+                device_uuid="dev-123",
+                service="aqiRefresh",
+                command="refresh",
+            )
+        await listener.stop()
+
+
+@pytest.mark.asyncio
+async def test_mqtt_publish_service_command_acknowledgement_timeout() -> None:
+    """Timeout waiting for broker PUBACK surfaces as QuboConnectionError."""
+    auth = QuboAuth()
+    auth._tokens = TokenPayload(access_token="jwt", user_uuid="user-1")
+    auth.get_valid_access_token = AsyncMock(return_value="jwt")  # type: ignore[method-assign]
+
+    listener = QuboMqttListener(auth, unit_uuid="unit-abc")
+
+    mock_mqtt_client = _create_mock_mqtt_client(on_connect_rc=0)
+    mock_info = MagicMock(rc=0)
+    mock_info.is_published.return_value = False
+    mock_mqtt_client.publish.return_value = mock_info
+    with patch("paho.mqtt.client.Client", return_value=mock_mqtt_client):
+        await listener.start()
+        with pytest.raises(
+            QuboConnectionError, match="timed out waiting for broker acknowledgement"
+        ):
+            await listener.publish_service_command(
+                device_uuid="dev-123",
+                service="aqiRefresh",
+                command="refresh",
+                timeout=0.05,
+            )
+        await listener.stop()
+
+
+@pytest.mark.asyncio
+async def test_mqtt_publish_service_command_delays_and_stop() -> None:
+    """Verifies unacknowledged publish is not reported successful when listener is stopped."""
+    auth = QuboAuth()
+    auth._tokens = TokenPayload(access_token="jwt", user_uuid="user-1")
+    auth.get_valid_access_token = AsyncMock(return_value="jwt")  # type: ignore[method-assign]
+
+    listener = QuboMqttListener(auth, unit_uuid="unit-abc")
+
+    mock_mqtt_client = _create_mock_mqtt_client(on_connect_rc=0)
+    mock_info = MagicMock(rc=0)
+    # Simulate delayed acknowledgement that never resolves to True before stop
+    mock_info.is_published.return_value = False
+
+    def slow_wait_for_publish(timeout: float | None = None) -> None:
+        import time
+
+        time.sleep(0.1)
+
+    mock_info.wait_for_publish.side_effect = slow_wait_for_publish
+    mock_mqtt_client.publish.return_value = mock_info
+
+    with patch("paho.mqtt.client.Client", return_value=mock_mqtt_client):
+        await listener.start()
+        pub_task = asyncio.create_task(
+            listener.publish_service_command(
+                device_uuid="dev-123",
+                service="aqiRefresh",
+                command="refresh",
+                timeout=0.05,
+            )
+        )
+        # Give event loop a cycle to dispatch the executor
+        await asyncio.sleep(0.01)
+        await listener.stop()
+
+        with pytest.raises(QuboConnectionError, match="timed out"):
+            await pub_task

@@ -236,6 +236,7 @@ class QuboMqttListener:
         unit_uuid: str | None = None,
         handle_name: str | None = None,
         qos: int = 1,
+        timeout: float = 10.0,
     ) -> None:
         """Publish a device control command to the Qubo MQTT broker.
 
@@ -255,15 +256,23 @@ class QuboMqttListener:
             handle_name: Value sent as ``handleName``. Defaults to the account
                 user UUID, matching what the mobile app sends.
             qos: MQTT quality of service for the publish.
+            timeout: Maximum seconds to wait for broker delivery acknowledgement
+                (PUBACK) before raising QuboConnectionError.
 
         Raises:
-            QuboConnectionError: If the listener is not running, or the broker
-                rejects the publish.
+            QuboConnectionError: If the listener is not running, the MQTT client
+                is disconnected, the broker rejects the publish, or broker
+                acknowledgement times out.
             ValueError: If no unit UUID is available to address the command.
         """
         if not self._is_running or self._mqttc is None:
             raise QuboConnectionError(
                 "QuboMqttListener is not running; call start() before publishing"
+            )
+
+        if not self._mqttc.is_connected():
+            raise QuboConnectionError(
+                f"Cannot publish service command to {device_uuid}: MQTT client is disconnected"
             )
 
         target_unit = unit_uuid or self.unit_uuid
@@ -294,7 +303,30 @@ class QuboMqttListener:
         info = self._mqttc.publish(topic, payload, qos=qos)
         rc = getattr(info, "rc", 0)
         if rc != 0:
+            if rc == 4:  # MQTT_ERR_NO_CONN
+                raise QuboConnectionError(
+                    f"MQTT publish to {topic} failed: client is not connected (rc={rc})"
+                )
             raise QuboConnectionError(f"MQTT publish to {topic} failed (rc={rc})")
+
+        loop = self._loop or asyncio.get_running_loop()
+        try:
+            await asyncio.wait_for(
+                loop.run_in_executor(None, info.wait_for_publish, timeout),
+                timeout=timeout,
+            )
+        except (TimeoutError, asyncio.TimeoutError) as err:
+            raise QuboConnectionError(
+                f"MQTT publish to {topic} timed out waiting for broker acknowledgement ({timeout}s)"
+            ) from err
+        except (ValueError, RuntimeError) as err:
+            raise QuboConnectionError(f"MQTT publish to {topic} failed: {err}") from err
+
+        if not info.is_published():
+            raise QuboConnectionError(
+                f"MQTT publish to {topic} timed out waiting for broker acknowledgement ({timeout}s)"
+            )
+
         _LOGGER.debug("Published %s.%s to %s", service, command, topic)
 
     async def start(self, connect_timeout: float = 15.0) -> None:
