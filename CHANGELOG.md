@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **MQTT Device Commands**: Added `QuboMqttListener.publish_service_command(device_uuid, service, command, ...)` to publish control commands over the Qubo MQTT broker. Some device services act only on commands delivered via MQTT: the REST command endpoint accepts the same envelope and returns `SUCCESS_UM_006`, but the device never acts on it. `aqiRefresh` on HPH air purifiers behaves this way, which leaves reported PM2.5 frozen until the mobile app asks for a sample. Defaults `handleName` to the account user UUID, matching the mobile app.
+
 ## [0.2.1] - 2026-11-03
 
 ### Fixed

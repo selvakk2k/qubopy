@@ -870,3 +870,75 @@ async def test_mqtt_wait_subscribed_timeout() -> None:
         assert listener.subscribed is False
 
         await listener.stop()
+
+
+@pytest.mark.asyncio
+async def test_mqtt_publish_service_command_envelope() -> None:
+    """Verify the published control envelope, topic, and default handleName."""
+    auth = QuboAuth()
+    auth._tokens = TokenPayload(
+        access_token="valid_jwt_token",
+        user_uuid="user-uuid-999",
+    )
+    auth.get_valid_access_token = AsyncMock(return_value="valid_jwt_token")  # type: ignore[method-assign]
+
+    listener = QuboMqttListener(auth, unit_uuid="unit-abc")
+
+    mock_mqtt_client = _create_mock_mqtt_client(on_connect_rc=0)
+    mock_mqtt_client.publish.return_value = MagicMock(rc=0)
+    with patch("paho.mqtt.client.Client", return_value=mock_mqtt_client):
+        await listener.start()
+        await listener.publish_service_command(
+            device_uuid="dev-123",
+            service="aqiRefresh",
+            command="refresh",
+        )
+        await listener.stop()
+
+    mock_mqtt_client.publish.assert_called_once()
+    topic, payload = mock_mqtt_client.publish.call_args.args
+    assert topic == "/control/unit-abc/dev-123/aqiRefresh"
+    assert mock_mqtt_client.publish.call_args.kwargs["qos"] == 1
+
+    devices = json.loads(payload)["command"]["devices"]
+    assert devices["deviceUUID"] == "dev-123"
+    assert devices["handleName"] == "user-uuid-999"
+    refresh = devices["services"]["aqiRefresh"]["commands"]["refresh"]
+    assert refresh == {"instanceId": 0, "parameters": {}}
+
+
+@pytest.mark.asyncio
+async def test_mqtt_publish_service_command_requires_running_listener() -> None:
+    """Publishing before start() raises instead of silently dropping the command."""
+    auth = QuboAuth()
+    auth._tokens = TokenPayload(access_token="jwt", user_uuid="user-1")
+    listener = QuboMqttListener(auth, unit_uuid="unit-abc")
+
+    with pytest.raises(QuboConnectionError, match="not running"):
+        await listener.publish_service_command(
+            device_uuid="dev-123",
+            service="aqiRefresh",
+            command="refresh",
+        )
+
+
+@pytest.mark.asyncio
+async def test_mqtt_publish_service_command_broker_rejection() -> None:
+    """A non-zero publish return code surfaces as QuboConnectionError."""
+    auth = QuboAuth()
+    auth._tokens = TokenPayload(access_token="jwt", user_uuid="user-1")
+    auth.get_valid_access_token = AsyncMock(return_value="jwt")  # type: ignore[method-assign]
+
+    listener = QuboMqttListener(auth, unit_uuid="unit-abc")
+
+    mock_mqtt_client = _create_mock_mqtt_client(on_connect_rc=0)
+    mock_mqtt_client.publish.return_value = MagicMock(rc=4)
+    with patch("paho.mqtt.client.Client", return_value=mock_mqtt_client):
+        await listener.start()
+        with pytest.raises(QuboConnectionError, match="rc=4"):
+            await listener.publish_service_command(
+                device_uuid="dev-123",
+                service="aqiRefresh",
+                command="refresh",
+            )
+        await listener.stop()

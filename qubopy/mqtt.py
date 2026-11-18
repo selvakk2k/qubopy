@@ -226,6 +226,77 @@ class QuboMqttListener:
             )
         return await self._client.get_all_devices()
 
+    async def publish_service_command(
+        self,
+        device_uuid: str,
+        service: str,
+        command: str,
+        parameters: dict[str, Any] | None = None,
+        instance_id: int = 0,
+        unit_uuid: str | None = None,
+        handle_name: str | None = None,
+        qos: int = 1,
+    ) -> None:
+        """Publish a device control command to the Qubo MQTT broker.
+
+        Some device services act only on commands delivered over MQTT. The REST
+        command endpoint accepts the same envelope and returns success, but the
+        device never acts on it; `aqiRefresh` on HPH air purifiers behaves this
+        way, which leaves reported air quality frozen until the mobile app asks
+        for a sample.
+
+        Args:
+            device_uuid: Target device UUID.
+            service: Service name, e.g. ``"aqiRefresh"``.
+            command: Command name within that service, e.g. ``"refresh"``.
+            parameters: Optional command parameters.
+            instance_id: Service instance identifier.
+            unit_uuid: Home unit UUID. Defaults to the listener's own unit.
+            handle_name: Value sent as ``handleName``. Defaults to the account
+                user UUID, matching what the mobile app sends.
+            qos: MQTT quality of service for the publish.
+
+        Raises:
+            QuboConnectionError: If the listener is not running, or the broker
+                rejects the publish.
+            ValueError: If no unit UUID is available to address the command.
+        """
+        if not self._is_running or self._mqttc is None:
+            raise QuboConnectionError(
+                "QuboMqttListener is not running; call start() before publishing"
+            )
+
+        target_unit = unit_uuid or self.unit_uuid
+        if not target_unit:
+            raise ValueError("unit_uuid is required to publish a service command")
+
+        payload = json.dumps(
+            {
+                "command": {
+                    "devices": {
+                        "deviceUUID": device_uuid,
+                        "handleName": handle_name or self._auth.user_uuid or device_uuid,
+                        "services": {
+                            service: {
+                                "commands": {
+                                    command: {
+                                        "instanceId": instance_id,
+                                        "parameters": parameters or {},
+                                    }
+                                }
+                            }
+                        },
+                    }
+                }
+            }
+        )
+        topic = f"/control/{target_unit}/{device_uuid}/{service}"
+        info = self._mqttc.publish(topic, payload, qos=qos)
+        rc = getattr(info, "rc", 0)
+        if rc != 0:
+            raise QuboConnectionError(f"MQTT publish to {topic} failed (rc={rc})")
+        _LOGGER.debug("Published %s.%s to %s", service, command, topic)
+
     async def start(self, connect_timeout: float = 15.0) -> None:
         """Connect to the Qubo MQTT broker and wait for CONNACK validation.
 
