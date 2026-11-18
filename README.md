@@ -1,10 +1,12 @@
 # Qubo Python Client Library & BLE Enabler (`qubopy`)
 
-[![PyPI version](https://img.shields.io/pypi/v/qubopy?style=flat-square)](https://pypi.org/project/qubopy/)
-[![Python Version](https://img.shields.io/pypi/pyversions/qubopy?style=flat-square)](https://pypi.org/project/qubopy/)
-[![Release](https://img.shields.io/github/v/release/selvakk2k/qubopy?style=flat-square)](https://github.com/selvakk2k/qubopy/releases)
-[![AI-Assisted](https://img.shields.io/badge/AI%20Assisted-Antigravity%20%7C%20Claude-blueviolet?style=flat-square&logo=google)](https://github.com/selvakk2k)
-[![AI Attribution](https://img.shields.io/badge/AI%20Attribution-AIA%20PAI%20Nc%20Hin-orange?style=flat-square)](https://aiattribution.github.io/interpret-attribution)
+<p align="center">
+  <a href="https://pypi.org/project/qubopy/"><img src="https://img.shields.io/pypi/v/qubopy?style=flat-square" alt="PyPI version"></a>
+  <a href="https://pypi.org/project/qubopy/"><img src="https://img.shields.io/pypi/pyversions/qubopy?style=flat-square" alt="Python Version"></a>
+  <a href="https://github.com/selvakk2k/qubopy/releases"><img src="https://img.shields.io/github/v/release/selvakk2k/qubopy?style=flat-square" alt="Release"></a>
+  <a href="https://github.com/selvakk2k"><img src="https://img.shields.io/badge/AI%20Assisted-Antigravity%20%7C%20Claude%20%7C%20CodeRabbit-blueviolet?style=flat-square" alt="AI-Assisted"></a>
+  <a href="https://aiattribution.github.io/interpret-attribution"><img src="https://img.shields.io/badge/AI%20Attribution-AIA%20PAI%20Nc%20Hin-orange?style=flat-square" alt="AI Attribution"></a>
+</p>
 
 An asynchronous Python client library and local Bluetooth Low Energy (BLE) credential extraction utility for Qubo smart home devices.
 
@@ -60,7 +62,7 @@ The Qubo smart home ecosystem consists of two distinct communication models:
 | `HCA` | Dashcams | `HCA08B`, Smart Dashcam Pro | In-Car Wi-Fi AP Credentials, Parking Mode, Speed Warning | Cloud REST | `✅ Hardware Verified` |
 | `HLM` / `HLW` | Door Locks | `HLM01`–`HLM10`, `HLR01`, `HLW01` | Remote Unlock, Live State/Battery Query (v2 route: verified via downstream integration), Guest OTP PIN (`⚠️ Route Verified`), Revoke OTP (`⚠️ Experimental`), Offline BLE Key Export | Cloud Gateway / Local BLE | Gateway: `✅ Hardware Verified`<br>BLE / OTP: `⚠️ Experimental` |
 | `HSP` | Smart Plugs | `HSP01` (16A), `HSP02` (10A), `HSP10` | Switch, Voltage, Current, Active Power (W), Energy (kWh) | Cloud REST | `⚠️ API Modeled` |
-| `HPH` | Air Purifiers | `HPH01`–`HPH08` (Q200 to Q1000) | Fan Speed, Auto/Sleep Presets, PM2.5, Filter Life, Child Lock | Cloud REST | `⚠️ API Modeled` |
+| `HPH` | Air Purifiers | `HPH01`–`HPH08` (Q200 to Q1000) | Fan Speed, Auto/Sleep Presets, PM2.5 (MQTT Refresh: `✅ Hardware Verified`), Filter Life, Child Lock | Cloud REST + MQTT | `⚠️ API Modeled` |
 | `HLB` | Smart Lighting | `HLB01`, `HLB10` | State, Brightness, RGB Color, White Temperature | Cloud REST | `⚠️ API Modeled` |
 | `HDS` / `HGS` | Security | `HDS01` (Contact), `HGS01` (Gas), `HSA01` (Smoke) | Binary Alarms, Battery Telemetry | Cloud REST | `⚠️ API Modeled` |
 | `HDT` | Climate | `HDT01` | Temperature (°C), Humidity (%) | Cloud REST | `⚠️ API Modeled` |
@@ -234,6 +236,10 @@ async def operate_plug(plug: QuboPlug):
 ### 3. Air Purifiers (HPH Series) (`⚠️ API Modeled / Untested`)
 
 *Note: Speed controls, presets, and sensor readings are modeled from APK application metadata. Community testing with physical air purifiers is welcome.*
+
+> [!TIP]
+> **Live PM2.5 Sampling (`aqiRefresh`)**:
+> On HPH series purifiers (such as the Q200), the appliance samples air quality continuously, but only reports updated PM2.5 telemetry while prompted by the mobile app or MQTT. Publishing an `aqiRefresh` command over MQTT via `await listener.publish_service_command(device_uuid=purifier.device_id, service="aqiRefresh", command="refresh", unit_uuid=purifier.unit_id)` unfreezes reported values and triggers real-time telemetry updates on `/monitor/{unit_uuid}/{device_uuid}/aqiStatus`.
 
 ```python
 from qubopy.devices import QuboAirPurifier
@@ -839,12 +845,23 @@ async def main():
         # Optional service and device filtering
         listener.add_event_listener(handle_event, service="panTiltControl")
         listener.add_event_listener(handle_event, service="lockControl")
+        listener.add_event_listener(handle_event, service="aqiStatus")
 
         # Run listener as an async context manager
         async with listener:
             # Wait for broker SUBACK confirmation before proceeding
             await listener.wait_subscribed()
             print("Listening for real-time Qubo events... Press Ctrl+C to stop.")
+
+            # Optional: Publish an outbound device control command over MQTT
+            # (required for services like air purifier aqiRefresh)
+            # await listener.publish_service_command(
+            #     device_uuid="dev-123",
+            #     service="aqiRefresh",
+            #     command="refresh",
+            #     unit_uuid=devices[0].unit_id if devices else None,
+            # )
+
             while True:
                 await asyncio.sleep(1)
 
@@ -949,6 +966,7 @@ The table below outlines real hardware and automated test verification across co
 | Area | Status |
 | :--- | :--- |
 | MQTT connect, JWT auth, `/monitor/{unit}/#` subscribe, camera events | Tested on a real Qubo camera |
+| Air purifier MQTT commands (`aqiRefresh` on Q200) | Tested on a real Q200 air purifier by @darkknight001 |
 | Reconnect after a dropped connection, token refresh on reconnect, stop on rejected credentials | Tested against a local Mosquitto broker (automated, `tests/test_mqtt_live.py`) |
 | Lock events (`lockControl` / `stateChanged`) | **Not tested**: envelope inferred from the app and from camera events; no lock available |
 | Whether the real Qubo broker drops an existing connection when the 1-hour phone-OTP token expires | **Not tested** |
@@ -988,5 +1006,6 @@ mypy qubopy
 * **Code Implementation & Engineering**: **Antigravity** (Google DeepMind)
 * **Automated Code Review & Auditing**: **CodeRabbit** ([@coderabbitai](https://github.com/coderabbitai))
 * **Code Review & Pre-Release Auditing**: **Claude** (Anthropic)
+* **Community Contributions**: [@darkknight001](https://github.com/darkknight001) — MQTT service command dispatch and Q200 air purifier hardware testing.
 
 Licensed under the **MIT License**. See the [LICENSE](LICENSE) file for details.
